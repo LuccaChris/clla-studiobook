@@ -1,35 +1,17 @@
 import Image from "next/image";
-import { BarberShop } from "@/generated/prisma/client";
+import Link from "next/link";
 
-interface BarbershopItemProps {
-    barbershop: BarberShop;
+import type { Salon } from "@/data/barbershop";
+
+export default function BarbershopItem({ barbershop }: { barbershop: Salon }) {
+  return (
+    <Link href={"/s/" + barbershop.slug} className="relative block min-h-52 overflow-hidden rounded-xl">
+      <Image src={barbershop.imageUrl} alt="" fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+        <h2 className="text-lg font-bold">{barbershop.name}</h2>
+        <p>{barbershop.address}</p>
+      </div>
+    </Link>
+  );
 }
-
-export const BarbershopItem = ({ barbershop }: BarbershopItemProps) => {
-    return (
-        <div className="relative min-h-[200px] min-w-[290px] overflow-hidden rounded-xl">
-            <div className="absolute top-0 left-0 z-10 h-full w-full rounded-lg bg-linear-to-t from-black to-transparent" />
-            <Image
-                src={barbershop.imageUrl}
-                alt={barbershop.nome}
-                fill
-                className="object-cover"
-            />
-
-            {/* Overlay */}
-            <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/70 to-transparent" />
-
-            {/* Conteúdo */}
-            <div className="absolute bottom-0 left-0 right-0 z-20 p-4">
-                <h3 className="text-background text-lg font-bold">
-                    {barbershop.nome}
-                </h3>
-                <p className="text-background text-xs">
-                    {barbershop.address}
-                </p>
-            </div>
-        </div>
-    );
-};
-
-export default BarbershopItem;

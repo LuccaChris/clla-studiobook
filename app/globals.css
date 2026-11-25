@@ -123,3 +123,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+.studio-form label { display: grid; gap: .35rem; font-weight: 500; }
+.studio-form input, .studio-form select { border: 1px solid var(--border); border-radius: .5rem; padding: .6rem; width: 100%; background: var(--background); }
+.studio-form button { background: var(--primary); color: var(--primary-foreground); border-radius: .5rem; padding: .6rem 1rem; cursor: pointer; }
+.studio-form button:disabled { opacity: .55; cursor: default; }
