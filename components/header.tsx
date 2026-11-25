@@ -1,16 +1,11 @@
-import { MenuIcon } from 'lucide-react';
-import Image from 'next/image';
+import Image from "next/image";
+import Link from "next/link";
 
-import { Button } from './ui/button';
-
-function Header() {
-    return (<header className="flex items-center justify-between bg-background px-5 py-6">
-        <Image src="/Logo.svg" alt="Clla StudioBook" width={91} height={24} />
-        <Button variant="outline" size="icon">
-            <MenuIcon />
-        </Button>
+export default function Header() {
+  return (
+    <header className="flex items-center justify-between border-b px-5 py-4">
+      <Link href="/"><Image src="/Logo.svg" alt="CLLA StudioBook" width={100} height={28} /></Link>
+      <Link href="/" className="text-sm underline">Salões</Link>
     </header>
-    );
+  );
 }
-
-export default Header;
