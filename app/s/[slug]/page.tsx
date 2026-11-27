@@ -15,7 +15,7 @@ export default async function SalonPage({ params }: { params: Promise<{ slug: st
   const salon = await getSalon(slug);
   const Icon = salonIcons[salon.layout] ?? Sparkles;
   const brand = getSalonBrand(slug);
-  const cover = brand?.cover ?? salon.imageUrl;
+  const cover = salon.imageUrl || brand?.cover || "";
   const hasCover = cover.startsWith("https://") ||
     (cover.startsWith("/") && !cover.startsWith("//"));
 

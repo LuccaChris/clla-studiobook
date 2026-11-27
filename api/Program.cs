@@ -73,12 +73,7 @@ app.MapGet("/api/salons", async () =>
 });
 app.MapGet("/api/salons/directory/lookup", async (string? phone) =>
 {
-    if (phone is null || phone.Length > 32 || !Regex.IsMatch(phone, @"^\+?[0-9 ().-]+$"))
-        return Results.BadRequest();
-
-    var number = Regex.Replace(phone, "[^0-9]", "");
-    if (number.Length is 10 or 11) number = "55" + number;
-    if (!Regex.IsMatch(number, @"^55[1-9][0-9]{9,10}$")) return Results.BadRequest();
+    if (AdminSettings.NormalizePhone(phone) is not string number) return Results.BadRequest();
 
     await using var cmd = db.CreateCommand("""
         SELECT slug, nome, address, layout
@@ -101,7 +96,7 @@ salon.MapGet("", async (string slug) =>
 {
     await using var cmd = db.CreateCommand("""
         SELECT b.nome,b.address,b.description,b."imageUrl",b.layout,s.id,s.nome,s."priceInCents",s.minutes
-        FROM "BarberShop" b LEFT JOIN "BarbershopService" s ON s."barbershopId"=b.id
+        FROM "BarberShop" b LEFT JOIN "BarbershopService" s ON s."barbershopId"=b.id AND s.active
         WHERE b.slug=$1 ORDER BY s.nome,s.id
         """);
     cmd.Parameters.AddWithValue(slug);
@@ -169,6 +164,7 @@ admin.MapPost("/bookings/{id:guid}/cancel",async(string slug,Guid id) =>
     cmd.Parameters.AddWithValue(id);
     return await cmd.ExecuteNonQueryAsync()==1 ? Results.NoContent() : Results.NotFound();
 });
+AdminSettings.Map(admin, db);
 Calendar.Map(salon, db);
 Calendar.MapCustomer(app, db);
 app.Run();

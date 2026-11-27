@@ -15,19 +15,24 @@ static class Calendar
         SELECT d.day, tick
         FROM requested_days d
         JOIN "BarberShop" b ON b.slug=$1
-        JOIN "BarbershopService" s ON s."barbershopId"=b.id AND s.id=$2
+        JOIN "BarbershopService" s ON s."barbershopId"=b.id AND s.id=$2 AND s.active
         CROSS JOIN LATERAL generate_series(d.day+b.opens,
             d.day+b.closes-s.minutes*interval '1 minute',interval '15 minutes') tick
         WHERE extract(isodow FROM d.day)::int=ANY(b.workdays)
           AND d.day BETWEEN timezone('America/Sao_Paulo',now())::date
                         AND timezone('America/Sao_Paulo',now())::date+90
           AND tick > timezone('America/Sao_Paulo',now())
+          AND NOT EXISTS (SELECT FROM salon_blocked_day d0 WHERE d0.salon_id=b.id AND d0.day=d.day)
+          AND (b.break_start IS NULL OR tick + s.minutes*interval '1 minute' <= d.day+b.break_start
+                                   OR tick >= d.day+b.break_end)
           AND NOT EXISTS (SELECT FROM booking k WHERE k.salon_id=b.id AND k.canceled_at IS NULL
               AND k.starts_at < tick+s.minutes*interval '1 minute' AND k.ends_at > tick)
         """;
     // Private rescheduling excludes only the already verified booking, not any other reservation.
     static readonly string RescheduleAvailability = "WITH requested_days AS (" + Day + ") " +
-        SlotRules.Replace("k.canceled_at IS NULL", "k.canceled_at IS NULL AND k.id<>$4", StringComparison.Ordinal);
+        SlotRules.Replace("AND s.active", "JOIN booking original ON original.id=$4 AND original.salon_id=b.id", StringComparison.Ordinal)
+            .Replace("s.minutes*interval '1 minute'","(original.ends_at-original.starts_at)",StringComparison.Ordinal)
+            .Replace("k.canceled_at IS NULL", "k.canceled_at IS NULL AND k.id<>$4", StringComparison.Ordinal);
     const string DailyAvailability = "WITH requested_days AS (" + Day + ") " + SlotRules;
     const string PeriodAvailability = "WITH requested_days AS (" + Period +
         "), available AS (" + SlotRules + ") SELECT DISTINCT day FROM available ORDER BY day";
@@ -77,7 +82,7 @@ static class Calendar
                 FROM (
                 """ + DailyAvailability + """
 
-                ) slots JOIN "BarbershopService" s ON s.id=$2
+                ) slots JOIN "BarbershopService" s ON s.id=$2 AND s.active
                 WHERE tick=$7
                 """,conn,tx);
             AddSelection(insert,slug,input.ServiceId,input.Day);
@@ -195,7 +200,7 @@ static class Calendar
         {
             if (start == previous) return Results.Conflict();
             await using var change = new NpgsqlCommand("""
-                UPDATE booking k SET starts_at=slots.tick,ends_at=slots.tick+s.minutes*interval '1 minute',revision=k.revision+1
+                UPDATE booking k SET starts_at=slots.tick,ends_at=slots.tick+(k.ends_at-k.starts_at),revision=k.revision+1
                 FROM (
                 """ + RescheduleAvailability + """
                 ) slots JOIN "BarbershopService" s ON s.id=$2
