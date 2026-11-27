@@ -163,6 +163,8 @@ export function AdminBookingRow({ booking: k, base, busy, onSave, onError, onAut
             if (window.confirm("Marcar falta de " + k.customer + "?")) void save("/outcome", { outcome: "no_show" }, "Falta registrada.");
           }}>Marcar falta</button>
         </>}
+        {k.status === "no_show" && k.ended && <button type="button" className={button} disabled={busy}
+          onClick={() => setEdit("complete")}>Corrigir falta</button>}
         {k.status === "completed" && <>
           <button type="button" className={button} disabled={busy} onClick={() => setEdit("complete")}>Editar valor e custo</button>
           <button type="button" className={button} disabled={busy} onClick={() => setEdit("payment")}>{balance > 0 ? "Registrar pagamento" : "Ver pagamentos"}</button>
@@ -179,7 +181,7 @@ export function AdminBookingRow({ booking: k, base, busy, onSave, onError, onAut
         const due = cents(f, "due");
         const cost = cents(f, "cost");
         if (due === null || !Number.isFinite(due) || (cost !== null && !Number.isFinite(cost))) return onError("Confira os valores em reais.");
-        await save("/outcome", { outcome: "completed", amountDueCents: due, directCostCents: cost }, "Atendimento concluído.");
+        await save("/outcome", { outcome: "completed", amountDueCents: due, directCostCents: cost }, k.status === "no_show" ? "Falta corrigida. Atendimento concluído." : "Atendimento concluído.");
       } else {
         const paid = cents(f, "paid");
         if (paid === null || !Number.isFinite(paid) || paid <= 0 || paid > balance) return onError("Informe um valor maior que zero e até o saldo a receber.");

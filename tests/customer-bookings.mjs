@@ -19,8 +19,21 @@ for (let n = 2; n <= 14 && dayWithTimes.length < 2; n++) {
 }
 assert.equal(dayWithTimes.length, 2);
 const [first, second] = dayWithTimes;
+const catalogue = await fetch(base + salon).then((r) => r.json());
+const service = catalogue.services.find((s) => s.id === serviceId);
+assert(service);
+const quoted = { expectedPriceInCents: service.priceInCents, expectedMinutes: service.minutes };
+const publicBooking = { ...first, serviceId, customer: "Confirmação de valor QA" };
+const stalePrice = { ...quoted, expectedPriceInCents: service.priceInCents + 1 };
+const staleDuration = { ...quoted, expectedMinutes: service.minutes + 1 };
+for (const quote of [{}, stalePrice, staleDuration]) {
+  const response = await send(salon + "/bookings", { ...publicBooking, ...quote });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { code: "service_changed", priceInCents: service.priceInCents, minutes: service.minutes });
+  assert((await at(first.day)).includes(first.time), "Oferta não confirmada não pode ocupar a agenda");
+}
 const make = async (selection) => {
-  const response = await send(salon + "/bookings", { ...selection, serviceId, customer: "Cliente fictício CI" });
+  const response = await send(salon + "/bookings", { ...selection, ...quoted, serviceId, customer: "Cliente fictício CI" });
   assert.equal(response.status, 200);
   const { manageCode } = await response.json();
   assert.match(manageCode, /^[a-f0-9]{64}$/);

@@ -305,7 +305,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
               }} />
           </label>
         </div>
-        <div className="mt-4"><NewAdminBooking key={day + ":" + agendaRevision + ":" + Boolean(intent?.create)} {...businessProps} config={config} day={day} configFailed={settingsFailed} retryConfig={retrySettings} openOnMount={intent?.create} onDone={reloadAgenda} /></div>
+        <div className="mt-4"><NewAdminBooking key={agendaRevision + ":" + Boolean(intent?.create)} {...businessProps} config={config} day={day} configFailed={settingsFailed} retryConfig={retrySettings} openOnMount={intent?.create} onDone={reloadAgenda} /></div>
         {agendaFailed ? <button className={secondary + " mt-4"} type="button" onClick={() => setAgendaRevision((value) => value + 1)}>Falha ao carregar a agenda. Tentar novamente</button>
           : items === null ? <p className="mt-4 text-sm text-muted-foreground" role="status">Carregando agenda…</p>
             : items.length ? <ul className="mt-5 divide-y overflow-hidden rounded-xl border" aria-label="Reservas do dia">

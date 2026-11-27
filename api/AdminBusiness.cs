@@ -121,7 +121,7 @@ static class AdminBusiness
                 UPDATE booking SET outcome=$3,amount_due_cents=$4,direct_cost_cents=$5,revision=revision+1
                 WHERE salon_id=$1 AND id=$2 AND canceled_at IS NULL AND revision=$6
                   AND ends_at<=timezone('America/Sao_Paulo',clock_timestamp())
-                  AND (outcome='scheduled' OR (outcome='completed' AND $3='completed' AND coalesce(paid_cents,0)<=$4))
+                  AND (outcome='scheduled' OR (outcome IN ('no_show','completed') AND $3='completed' AND coalesce(paid_cents,0)<=$4))
                 """);
             Add(cmd,SalonId(ctx),id,input.Outcome);
             Nullable(cmd,NpgsqlDbType.Integer,input.AmountDueCents);

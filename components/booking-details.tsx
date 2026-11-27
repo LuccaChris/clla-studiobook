@@ -23,6 +23,7 @@ export default function BookingDetails() {
   const [mode, setMode] = useState<"cancel" | "move">();
   const [day, setDay] = useState("");
   const [time, setTime] = useState("");
+  const [retrySlots, setRetrySlots] = useState(0);
   const [choices, setChoices] = useState<{ day: string; values?: string[] }>();
   const [reminder, setReminder] = useState(false);
 
@@ -54,7 +55,7 @@ export default function BookingDetails() {
     }
     void load();
     return () => { active = false; };
-  }, [code, day, mode]);
+  }, [code, day, mode, retrySlots]);
 
   const b = loaded?.code === code ? loaded?.booking : undefined;
   const options = choices?.day === day ? choices : undefined;
@@ -141,7 +142,10 @@ export default function BookingDetails() {
               </select>
             </label>
             {options && (options.values ? !options.values.some((slot) => day !== b.day || slot !== b.time) && <p>Sem novos horários disponíveis.</p>
-              : <p>Não foi possível consultar os horários. Selecione a data novamente.</p>)}
+              : <div className="space-y-2">
+                <p role="status">Não foi possível consultar os horários.</p>
+                <button type="button" onClick={() => { setChoices(undefined); setRetrySlots((value) => value + 1); }}>Recarregar horários</button>
+              </div>)}
           </>}
         </>}
         <div className="flex flex-wrap gap-3">
