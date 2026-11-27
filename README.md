@@ -10,6 +10,8 @@ Use Node.js 22 LTS, npm, SDK .NET 10 e um banco PostgreSQL. Na raiz, aplique o S
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/001-studiobook.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/002-client-directory.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/003-client-bookings.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/004-admin-settings.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/005-admin-business.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/demo.sql
 export ConnectionStrings__StudioBook='Host=localhost;Database=studiobook;Username=studiobook;Password=SUA_SENHA'
 # No Bash, leia a senha administrativa sem gravá-la no histórico.
@@ -30,9 +32,9 @@ Para incluir outro estabelecimento, use os INSERTs do arquivo de demonstração 
 
 ## Regras da primeira versão
 
-Cada salão tem uma agenda compartilhada e um administrador. Os horários iniciais vão de segunda a sábado, das 9h às 18h no fuso de São Paulo. O operador pode ajustar opens, closes e workdays no cadastro e minutes em cada serviço. A reserva considera a duração completa e os atendimentos existentes, em intervalos de início de 15 minutos, até 90 dias à frente. O cliente recebe a confirmação na própria página. O administrador consulta o dia e cancela reservas.
+Cada estabelecimento tem uma agenda e uma conta administrativa próprias. Os horários padrão vão de segunda a sábado, das 9h às 18h no fuso de São Paulo. O administrador pode ajustar horários e duração dos serviços pelo painel. A reserva considera a duração completa e os atendimentos existentes, em intervalos de início de 15 minutos, até 90 dias à frente. O cliente recebe a confirmação na própria página. O administrador consulta o dia, cria, remarca e cancela reservas.
 
-Em produção, publique o Next com HTTPS, mantenha a API atrás do proxy e persista as chaves de Data Protection do ASP.NET Core para preservar sessões entre reinícios e réplicas. Aplique os três arquivos de migração em ordem antes de iniciar a aplicação. A conexão PostgreSQL da API deve usar o proprietário das tabelas ou um papel de servidor com as permissões e políticas necessárias.
+Em produção, publique o Next com HTTPS, mantenha a API atrás do proxy e persista as chaves de Data Protection do ASP.NET Core para preservar sessões entre reinícios e réplicas. Aplique os cinco arquivos de migração em ordem antes de iniciar a aplicação. A conexão PostgreSQL da API deve usar o proprietário das tabelas ou um papel de servidor com as permissões e políticas necessárias.
 
 ## Verificar o isolamento
 
@@ -65,3 +67,36 @@ e-mail ou WhatsApp. Após remarcar ou cancelar, revise o evento no calendário.
 Para validar esse fluxo localmente com os dados de demonstração, execute
 `TEST_ORIGIN=http://localhost:3000 node tests/customer-bookings.mjs` em um banco
 descartável. O teste cria, remarca e cancela agendamentos fictícios.
+
+## Administração de cada estabelecimento
+
+O painel está em `/s/{slug}/admin`. O operador cria uma conta por local com
+`dotnet run --project api -- admin <slug> <email>` e a variável temporária
+`STUDIOBOOK_ADMIN_PASSWORD` (mínimo de 12 caracteres). Use senhas diferentes,
+fornecidas ao dono por um canal seguro; não as versione nem envie em links.
+A sessão administrativa autoriza somente o estabelecimento do login.
+
+O painel permite alterar nome, descrição, endereço, telefone público de busca
+e capa via URL HTTPS; criar, editar e desativar serviços sem apagar reservas;
+configurar dias, abertura, fechamento, pausa diária e bloquear datas inteiras.
+Por exemplo, 08:00–12:00 e 13:00–18:00 impedem um serviço de 40 minutos às 11:30.
+Mudanças de horário e folgas que afetam reservas futuras confirmadas são
+recusadas. Nenhuma reserva é cancelada ao desativar um serviço. Remarcações de
+reservas existentes mantêm a duração originalmente contratada.
+
+Para conferir o painel e as regras da agenda, use as mesmas variáveis do
+teste de isolamento, com `TEST_SALON_A=studio-amaral` e
+`TEST_SALON_B=barbearia-lopes`, e execute `node tests/admin-settings.mjs`
+somente em banco descartável. Esse teste altera os dados de demonstração.
+
+### Painel do dono: operação e resumo do negócio
+
+A migração `db/005-admin-business.sql` precisa ser aplicada **depois** da 004 e **antes** de subir a nova API. Ela preserva reservas antigas; quando a origem não foi registrada, o resumo mostra “Não registrada”. A agenda continua sendo de um único profissional por local.
+
+- **Hoje:** a tela inicial mostra o próximo atendimento do dia, o atalho de novo agendamento, pendências com links para resolver e horários publicáveis de amanhã por serviço. Perfil, serviços e horários ficam agrupados em Configurações.
+- **Agenda:** adicione reservas de telefone, WhatsApp e balcão. O StudioBook usa a mesma disponibilidade para evitar dupla reserva. Remarcar preserva a duração e, nas reservas online, o link do cliente. Ao fim do horário, marque como concluído ou falta. Em um atendimento concluído, registre o preço real, o custo direto e um ou mais recebimentos separados.
+- **Horários:** bloqueie só parte do dia, personalize o expediente de uma data e defina antecedência, prazo de alteração para o cliente e intervalo entre serviços. Um horário especial substitui a pausa regular naquele dia. Mudanças que invalidem reservas futuras são rejeitadas. Instruções de preparo do serviço aparecem antes de reservar.
+- **Lista de espera:** o dono inclui nome, WhatsApp, serviço e data, com horário opcional. O link só abre uma mensagem pronta; não envia nem segura a vaga. Após o aceite, confirmar cria a reserva e fecha a entrada no mesmo passo, desde que a vaga continue livre.
+- **Resumo:** recebimentos seguem as datas dos pagamentos; pendências e lucro estimado, o mês do atendimento. O lucro estimado desconta custos diretos e despesas fixas informadas, e não é exibido se faltar algum custo. Ranking por demanda e margem por hora, origem e estimativa de ocupação também ficam no painel. O resumo distingue clientes novos e recorrentes quando há telefone informado no agendamento, sem exibir o número no resumo ou nas páginas públicas.
+
+Para verificar em banco descartável, carregue as migrações 001 a 005, `db/demo.sql`, os administradores fictícios e `tests/admin-business-fixtures.sql`. Rode `node tests/admin-business.mjs` com `TEST_ORIGIN`, `TEST_EMAIL_A`, `TEST_PASSWORD_A`, `TEST_EMAIL_B`, `TEST_PASSWORD_B` e `TEST_BUSINESS_PAST_DAY` (último dia do mês anterior em São Paulo, AAAA-MM-DD). O teste altera dados e não deve usar produção.

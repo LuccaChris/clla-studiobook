@@ -73,12 +73,7 @@ app.MapGet("/api/salons", async () =>
 });
 app.MapGet("/api/salons/directory/lookup", async (string? phone) =>
 {
-    if (phone is null || phone.Length > 32 || !Regex.IsMatch(phone, @"^\+?[0-9 ().-]+$"))
-        return Results.BadRequest();
-
-    var number = Regex.Replace(phone, "[^0-9]", "");
-    if (number.Length is 10 or 11) number = "55" + number;
-    if (!Regex.IsMatch(number, @"^55[1-9][0-9]{9,10}$")) return Results.BadRequest();
+    if (AdminSettings.NormalizePhone(phone) is not string number) return Results.BadRequest();
 
     await using var cmd = db.CreateCommand("""
         SELECT slug, nome, address, layout
@@ -100,8 +95,8 @@ var salon = app.MapGroup("/api/salons/{slug}");
 salon.MapGet("", async (string slug) =>
 {
     await using var cmd = db.CreateCommand("""
-        SELECT b.nome,b.address,b.description,b."imageUrl",b.layout,s.id,s.nome,s."priceInCents",s.minutes
-        FROM "BarberShop" b LEFT JOIN "BarbershopService" s ON s."barbershopId"=b.id
+        SELECT b.nome,b.address,b.description,b."imageUrl",b.layout,s.id,s.nome,s."priceInCents",s.minutes,s.preparation
+        FROM "BarberShop" b LEFT JOIN "BarbershopService" s ON s."barbershopId"=b.id AND s.active
         WHERE b.slug=$1 ORDER BY s.nome,s.id
         """);
     cmd.Parameters.AddWithValue(slug);
@@ -116,7 +111,7 @@ salon.MapGet("", async (string slug) =>
     do
     {
         if (!r.IsDBNull(5))
-            services.Add(new { id = r.GetString(5), name = r.GetString(6), priceInCents = r.GetInt32(7), minutes = r.GetInt32(8) });
+            services.Add(new { id = r.GetString(5), name = r.GetString(6), priceInCents = r.GetInt32(7), minutes = r.GetInt32(8), preparation = r.GetString(9) });
     }
     while (await r.ReadAsync());
     return Results.Ok(new { name, address, description, imageUrl, layout, services });
@@ -148,27 +143,9 @@ admin.AddEndpointFilter(async (ctx,next) =>
     return await next(ctx);
 });
 admin.MapPost("/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); return Results.NoContent(); });
-admin.MapGet("/bookings", async (string slug, DateOnly day) =>
-{
-    await using var cmd=db.CreateCommand("""
-        SELECT k.id,k.customer,k.service_name,to_char(k.starts_at,'HH24:MI')
-        FROM booking k JOIN "BarberShop" b ON b.id=k.salon_id
-        WHERE b.slug=$1 AND k.canceled_at IS NULL AND k.starts_at >= $2::date AND k.starts_at < $2::date+1 ORDER BY k.starts_at
-        """);
-    cmd.Parameters.AddWithValue(slug);
-    cmd.Parameters.AddWithValue(day);
-    await using var r=await cmd.ExecuteReaderAsync();
-    var items=new List<object>();
-    while(await r.ReadAsync()) items.Add(new {id=r.GetGuid(0), customer=r.GetString(1), service=r.GetString(2), time=r.GetString(3)});
-    return items;
-});
-admin.MapPost("/bookings/{id:guid}/cancel",async(string slug,Guid id) =>
-{
-    await using var cmd=db.CreateCommand("""UPDATE booking SET canceled_at=now() FROM "BarberShop" b WHERE booking.salon_id=b.id AND b.slug=$1 AND booking.id=$2 AND booking.canceled_at IS NULL""");
-    cmd.Parameters.AddWithValue(slug);
-    cmd.Parameters.AddWithValue(id);
-    return await cmd.ExecuteNonQueryAsync()==1 ? Results.NoContent() : Results.NotFound();
-});
+AdminBusiness.Map(admin, db);
+AdminExceptions.Map(admin, db);
+AdminSettings.Map(admin, db);
 Calendar.Map(salon, db);
 Calendar.MapCustomer(app, db);
 app.Run();

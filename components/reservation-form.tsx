@@ -43,6 +43,8 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
   const [day, setDay] = useState("");
   const [time, setTime] = useState("");
   const [customer, setCustomer] = useState("");
+  const [phone, setPhone] = useState("");
+  const preparation = services.find((service) => service.id === serviceId)?.preparation;
   const [waiting, setWaiting] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [message, setMessage] = useState("");
@@ -80,7 +82,7 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
       setMessage("");
 
       try {
-        const response = await postJson(base + "/bookings", { serviceId, day, time, customer });
+        const response = await postJson(base + "/bookings", { serviceId, day, time, customer, phone });
         if (response.ok) {
           const data: { manageCode?: unknown } = await response.json().catch(() => ({}));
           if (validBookingCode(data.manageCode))
@@ -88,11 +90,12 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
           else setConfirmation(undefined);
           setMessage("Agendamento confirmado para " + day.split("-").reverse().join("/") + " às " + time + ".");
           setCustomer("");
+          setPhone("");
           setDay("");
         } else {
           setMessage(response.status === 409
             ? "Horário indisponível. Escolha outro."
-            : "Não foi possível confirmar o agendamento.");
+            : response.status === 400 ? "Confira o nome e o telefone, se informado." : "Não foi possível confirmar o agendamento.");
         }
         setTime("");
         setRefresh((value) => value + 1);
@@ -119,6 +122,9 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
             ))}
           </select>
         </label>
+        {preparation && <p className="whitespace-pre-wrap break-words rounded-xl border p-3 text-sm">
+          <strong className="block">Antes do atendimento</strong>{preparation}
+        </p>}
         <div className="booking-calendar" role="group" aria-label="Data do agendamento">
           <div className="calendar-heading">
             <button type="button" aria-label="Mês anterior" disabled={month <= today.slice(0, 7)} onClick={() => moveMonth(-1)}>‹</button>
@@ -169,6 +175,10 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
         <label>
           Seu nome
           <input required maxLength={100} autoComplete="name" value={customer} onChange={(event) => setCustomer(event.target.value)} />
+        </label>
+        <label>Telefone com DDD (opcional)
+          <input type="tel" maxLength={32} autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} />
+          <span className="text-sm font-normal text-muted-foreground">Visível apenas para o estabelecimento, para identificar seu histórico.</span>
         </label>
         <button disabled={!availableDays.has(day) || !availableSlots.includes(time) || !customer.trim()}>
           Confirmar agendamento
