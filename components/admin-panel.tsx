@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, CalendarDays, Clock3, ExternalLink, List, LogOut, Store, Users } from "lucide-react";
+import { BarChart3, CalendarDays, ExternalLink, LogOut, Settings2, Sun, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -9,16 +9,23 @@ import { postJson, salonToday } from "@/lib/calendar";
 
 import { type AdminBooking, AdminBookingRow, BusinessSummary, NewAdminBooking, ScheduleControls, WaitlistPanel } from "./admin-business";
 import { type AdminConfig, HoursSettings, ProfileSettings, type SaveBusiness, type SaveSettings, ServicesSettings } from "./admin-settings";
+import { AdminToday,type AgendaIntent } from "./admin-today";
 type Mode = "loading" | "login" | "ready" | "error";
-type Tab = "agenda" | "resumo" | "espera" | "perfil" | "servicos" | "horarios";
+type Tab = "hoje" | "agenda" | "resumo" | "espera" | "config";
+type SettingsTab = "perfil" | "servicos" | "horarios";
 
 const tabs = [
-  { id: "agenda", label: "Agenda", Icon: CalendarDays },
-  { id: "resumo", label: "Resumo", Icon: BarChart3 },
-  { id: "espera", label: "Lista de espera", Icon: Users },
-  { id: "perfil", label: "Perfil", Icon: Store },
-  { id: "servicos", label: "Serviços", Icon: List },
-  { id: "horarios", label: "Horários e folgas", Icon: Clock3 },
+  { id: "hoje", label: "Hoje", short: "Hoje", Icon: Sun },
+  { id: "agenda", label: "Agenda", short: "Agenda", Icon: CalendarDays },
+  { id: "resumo", label: "Financeiro", short: "Financeiro", Icon: BarChart3 },
+  { id: "espera", label: "Lista de espera", short: "Espera", Icon: Users },
+  { id: "config", label: "Configurações", short: "Ajustes", Icon: Settings2 },
+] as const;
+
+const settingsSections = [
+  { id: "perfil", label: "Perfil" },
+  { id: "servicos", label: "Serviços" },
+  { id: "horarios", label: "Horários e folgas" },
 ] as const;
 
 const screen = "rounded-2xl border bg-card p-4 sm:p-6";
@@ -34,7 +41,9 @@ export default function AdminPanel({ slug }: { slug: string }) {
   const base = "/api/salons/" + salon;
   const [day, setDay] = useState(salonToday);
   const [mode, setMode] = useState<Mode>("loading");
-  const [tab, setTab] = useState<Tab>("agenda");
+  const [tab, setTab] = useState<Tab>("hoje");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("perfil");
+  const [intent, setIntent] = useState<AgendaIntent | null>(null);
   const [items, setItems] = useState<AdminBooking[] | null>(null);
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [message, setMessage] = useState("");
@@ -122,10 +131,13 @@ export default function AdminPanel({ slug }: { slug: string }) {
     setItems(null);
     setConfig(null);
     setMode("login");
+    setIntent(null);
+    setTab("hoje");
     setMessage("Entre novamente para administrar este local.");
     setFailed(true);
   }, []);
-  const reloadAgenda = () => setAgendaRevision((value) => value + 1);
+  const retrySettings = () => { setSettingsFailed(false); setSettingsRevision((value) => value + 1); };
+  const reloadAgenda = () => { setIntent(null); setAgendaRevision((value) => value + 1); };
   const saveBusiness: SaveBusiness = (path, payload, success) => mutate("/admin" + path, payload, success);
   const businessProps = { base, busy, onSave: saveBusiness, onError: (value: string) => status(value, true), onAuth };
 
@@ -185,7 +197,9 @@ export default function AdminPanel({ slug }: { slug: string }) {
       setItems(null);
       setConfig(null);
       setSettingsFailed(false);
-      setTab("agenda");
+      setTab("hoje");
+      setIntent(null);
+      setDay(salonToday());
       setMode("login");
     }
   }
@@ -200,8 +214,21 @@ export default function AdminPanel({ slug }: { slug: string }) {
   };
 
   function switchTab(next: Tab) {
+    setIntent(null);
     setTab(next);
     status("");
+  }
+
+  function openAgenda(next: AgendaIntent) {
+    status("");
+    setIntent(next);
+    if (next.day !== day) {
+      setItems(null);
+      setAgendaFailed(false);
+      setDay(next.day);
+    }
+    setTab("agenda");
+    if (!next.create && !next.bookingId) requestAnimationFrame(() => tabRefs.current.agenda?.focus());
   }
 
   function switchWithKeyboard(event: KeyboardEvent<HTMLButtonElement>, position: number) {
@@ -246,20 +273,22 @@ export default function AdminPanel({ slug }: { slug: string }) {
       <Link href={"/s/" + salon} className={secondary}><ExternalLink size={16} aria-hidden /> Ver página pública</Link>
       <button type="button" className={secondary} disabled={busy} onClick={() => void logout()}><LogOut size={16} aria-hidden /> Sair</button>
     </div>
-    <div className="grid grid-cols-2 gap-1 rounded-xl border bg-muted/60 p-1 sm:grid-cols-3 lg:grid-cols-6" role="tablist" aria-label="Painel administrativo">
-      {tabs.map(({ id, label, Icon }, position) => <button type="button" key={id} id={"admin-tab-" + id}
+    <div className="grid grid-cols-5 gap-0.5 rounded-xl border bg-muted/60 p-1 sm:gap-1" role="tablist" aria-label="Painel administrativo">
+      {tabs.map(({ id, label, short, Icon }, position) => <button type="button" key={id} id={"admin-tab-" + id}
         ref={(element) => { tabRefs.current[id] = element; }}
-        role="tab" aria-selected={tab === id} aria-controls={"admin-panel-" + id} tabIndex={tab === id ? 0 : -1}
-        className={"flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg px-2 py-2 text-center text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring " + (
+        role="tab" aria-label={label} aria-selected={tab === id} aria-controls={"admin-panel-" + id} tabIndex={tab === id ? 0 : -1}
+        className={"flex min-h-12 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg p-1 text-center text-[10px] font-semibold transition-colors min-[390px]:text-xs sm:flex-row sm:gap-2 sm:text-sm focus-visible:outline-2 focus-visible:outline-ring " + (
           tab === id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:bg-card/70 hover:text-foreground"
         )}
         onClick={() => switchTab(id)} onKeyDown={(event) => switchWithKeyboard(event, position)}>
-        <Icon size={17} className="shrink-0" aria-hidden /> {label}
+        <Icon size={18} className="shrink-0" aria-hidden /><span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span>
       </button>)}
     </div>
     {announcement}
     {tabs.map(({ id }) => <div key={id} id={"admin-panel-" + id} role="tabpanel" aria-labelledby={"admin-tab-" + id} hidden={tab !== id}>
-      {tab !== id ? null : id === "resumo" ? <BusinessSummary {...businessProps} /> : id === "espera" ? <WaitlistPanel {...businessProps} config={config} onDone={reloadAgenda} /> : id === "agenda" ? <section className={screen}>
+      {tab !== id ? null : id === "hoje" ? <AdminToday base={base} publicPath={"/s/" + salon} config={config} configFailed={settingsFailed} retryConfig={retrySettings} onAuth={onAuth}
+        onAgenda={openAgenda} onFinance={() => { switchTab("resumo"); requestAnimationFrame(() => tabRefs.current.resumo?.focus()); }} revision={agendaRevision} />
+        : id === "resumo" ? <BusinessSummary {...businessProps} /> : id === "espera" ? <WaitlistPanel {...businessProps} config={config} onDone={reloadAgenda} /> : id === "agenda" ? <section className={screen}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Agenda do estabelecimento</h2>
@@ -272,25 +301,33 @@ export default function AdminPanel({ slug }: { slug: string }) {
                 setItems(null);
                 setAgendaFailed(false);
                 setDay(event.target.value);
+                setIntent((current) => current?.create ? { ...current, day: event.target.value } : null);
               }} />
           </label>
         </div>
-        <div className="mt-4"><NewAdminBooking key={day + ":" + agendaRevision} {...businessProps} config={config} day={day} onDone={reloadAgenda} /></div>
+        <div className="mt-4"><NewAdminBooking key={day + ":" + agendaRevision + ":" + Boolean(intent?.create)} {...businessProps} config={config} day={day} configFailed={settingsFailed} retryConfig={retrySettings} openOnMount={intent?.create} onDone={reloadAgenda} /></div>
         {agendaFailed ? <button className={secondary + " mt-4"} type="button" onClick={() => setAgendaRevision((value) => value + 1)}>Falha ao carregar a agenda. Tentar novamente</button>
           : items === null ? <p className="mt-4 text-sm text-muted-foreground" role="status">Carregando agenda…</p>
             : items.length ? <ul className="mt-5 divide-y overflow-hidden rounded-xl border" aria-label="Reservas do dia">
               {items.map((booking) => <AdminBookingRow key={booking.id + ":" + booking.revision} {...businessProps}
-                booking={booking} day={day} onDone={reloadAgenda} />)}
+                booking={booking} day={day} highlight={intent?.bookingId === booking.id} initialEdit={intent?.bookingId === booking.id ? intent.edit : undefined} onDone={reloadAgenda} />)}
             </ul> : <p className="mt-5 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Nenhuma reserva para esta data.</p>}
-      </section> : settingsFailed ? <button className={secondary} type="button" onClick={() => {
-        setSettingsFailed(false);
-        setSettingsRevision((value) => value + 1);
-      }}>Falha ao carregar as configurações. Tentar novamente</button>
-        : config === null ? <p role="status">Carregando configurações…</p>
-          : id === "perfil" ? <ProfileSettings key={JSON.stringify([config.name, config.address, config.description, config.directoryPhone, config.imageUrl])}
-            config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} />
-            : id === "servicos" ? <ServicesSettings config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} />
-              : <div className="space-y-4"><HoursSettings config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} /><ScheduleControls {...businessProps} /></div>}
+      </section> : <div className="space-y-4">
+        <section className={screen}>
+          <h2 className="text-lg font-semibold">Configurações</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Edite a página pública, os serviços e quando você atende.</p>
+          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Seções de configurações">
+            {settingsSections.map(({ id: name, label }) => <button type="button" key={name} onClick={() => setSettingsTab(name)}
+              aria-pressed={settingsTab === name} className={secondary + (settingsTab === name ? " bg-muted" : "")}>{label}</button>)}
+          </div>
+        </section>
+        {settingsFailed ? <button className={secondary} type="button" onClick={retrySettings}>Falha ao carregar as configurações. Tentar novamente</button>
+          : config === null ? <p role="status">Carregando configurações…</p>
+            : settingsTab === "perfil" ? <ProfileSettings key={JSON.stringify([config.name, config.address, config.description, config.directoryPhone, config.imageUrl])}
+              config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} />
+              : settingsTab === "servicos" ? <ServicesSettings config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} />
+                : <><HoursSettings config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} /><ScheduleControls {...businessProps} /></>}
+      </div>}
     </div>)}
   </section>;
 }

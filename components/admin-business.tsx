@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent,useEffect, useState } from "react";
+import { type FormEvent,useEffect, useRef, useState } from "react";
 
 import { addCalendarDays, salonToday } from "@/lib/calendar";
 
@@ -42,7 +42,7 @@ function MoneyInput({ label, name, value, required = false }: { label: string; n
   return <label>{label}<input name={name} inputMode="decimal" placeholder="0,00" defaultValue={field(value)} required={required} /></label>;
 }
 
-function useRemote<T>(url: string, onAuth?: () => void) {
+export function useRemote<T>(url: string, onAuth?: () => void) {
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState<{ key: string; data?: T; failed?: boolean }>();
   const key = url + "|" + revision;
@@ -69,7 +69,7 @@ function useRemote<T>(url: string, onAuth?: () => void) {
   return { data: state?.key === key ? state.data : undefined, error: state?.key === key && state.failed, reload: () => setRevision((value) => value + 1) };
 }
 
-function RemoteNotice({ error, reload, label }: { error?: boolean; reload: () => void; label: string }) {
+export function RemoteNotice({ error, reload, label }: { error?: boolean; reload: () => void; label: string }) {
   return error ? <button className={button} type="button" onClick={reload}>Falha ao carregar. Tentar novamente</button> : <p role="status" className="text-sm text-muted-foreground">{label}</p>;
 }
 
@@ -88,11 +88,16 @@ function Slots({ url, preferredTime, onAuth }: { url: string; preferredTime?: st
 const serviceOptions = (config: AdminConfig) => config.services.filter((service) => service.active).map((service) => <option value={service.id} key={service.id}>{service.name}</option>);
 const slotUrl = (base: string, id: string, day: string) => id && day ? base + "/slots?" + new URLSearchParams({ serviceId: id, day }) : "";
 
-export function NewAdminBooking({ base, busy, onSave, config, day, onDone }: Pick<Props,"base"|"busy"|"onSave"> & { config: AdminConfig | null; day: string; onDone: () => void }) {
-  const [shown, setShown] = useState(false);
+export function NewAdminBooking({ base, busy, onSave, config, day, onDone, configFailed, retryConfig, openOnMount = false }: Pick<Props,"base"|"busy"|"onSave"> & { config: AdminConfig | null; day: string; onDone: () => void; openOnMount?: boolean; configFailed: boolean; retryConfig: () => void }) {
+  const [shown, setShown] = useState(openOnMount);
   const [serviceId, setServiceId] = useState("");
+  const first = useRef<HTMLInputElement>(null);
+  const hasConfig = config !== null;
+  useEffect(() => {
+    if (shown && hasConfig) first.current?.focus();
+  }, [shown,hasConfig]);
   if (!shown) return <button className={button} type="button" onClick={() => setShown(true)}>+ Nova reserva manual</button>;
-  return <div className="rounded-xl border bg-muted/25 p-4">
+  return <div className="scroll-mt-24 rounded-xl border bg-muted/25 p-4">
     <h3 className="mb-3 font-semibold">Nova reserva manual</h3>
     {config ? <form className="studio-form" onSubmit={async (event) => {
       event.preventDefault();
@@ -103,7 +108,7 @@ export function NewAdminBooking({ base, busy, onSave, config, day, onDone }: Pic
       }
     }}>
       <fieldset className="grid gap-3 sm:grid-cols-2" disabled={busy}>
-        <label>Nome do cliente<input name="customer" required maxLength={100} /></label>
+        <label>Nome do cliente<input ref={first} name="customer" required maxLength={100} /></label>
         <label>Telefone com DDD (opcional)<input type="tel" name="phone" maxLength={32} /></label>
         <label>Serviço<select required value={serviceId} onChange={(event) => setServiceId(event.target.value)}><option value="">Selecione um serviço</option>{serviceOptions(config)}</select></label>
         <label>Canal<select name="origin"><option value="whatsapp">WhatsApp</option><option value="phone">Telefone</option><option value="in_person">Presencial</option></select></label>
@@ -113,12 +118,17 @@ export function NewAdminBooking({ base, busy, onSave, config, day, onDone }: Pic
           <button type="button" className={button} onClick={() => setShown(false)}>Fechar</button>
         </div>
       </fieldset>
-    </form> : <p role="status">Configurações da agenda indisponíveis. Feche e tente recarregar a página.</p>}
+    </form> : <RemoteNotice error={configFailed} reload={retryConfig} label="Carregando serviços…" />}
   </div>;
 }
 
-export function AdminBookingRow({ booking: k, base, busy, onSave, onError, onAuth, day, onDone }: Props & { booking: AdminBooking; day: string; onDone: () => void }) {
-  const [edit, setEdit] = useState<"move" | "complete" | "payment" | null>(null);
+export function AdminBookingRow({ booking: k, base, busy, onSave, onError, onAuth, day, onDone, highlight = false, initialEdit }: Props & { booking: AdminBooking; day: string; onDone: () => void; highlight?: boolean; initialEdit?: "complete" | "payment" }) {
+  const [edit, setEdit] = useState<"move" | "complete" | "payment" | null>(() =>
+    initialEdit === "payment" && k.status === "completed" ? "payment" : initialEdit === "complete" && k.status === "scheduled" && k.ended ? "complete" : null);
+  const row = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (highlight) row.current?.focus();
+  }, [highlight]);
   const [target, setTarget] = useState(day);
   const path = "/bookings/" + k.id;
   async function save(action: string, payload: object, message: string) {
@@ -130,7 +140,7 @@ export function AdminBookingRow({ booking: k, base, busy, onSave, onError, onAut
   const balance = (k.amountDueCents ?? 0) - (k.paidCents ?? 0);
   const payment = k.status === "completed" && k.amountDueCents !== null ?
     (k.paidCents ?? 0) < k.amountDueCents ? format(k.amountDueCents - (k.paidCents ?? 0)) + " a receber" : "Sem saldo pendente" : null;
-  return <li className="space-y-3 p-3 sm:p-4">
+  return <li ref={row} tabIndex={-1} className={"space-y-3 p-3 sm:p-4 focus-visible:outline-2 focus-visible:outline-ring " + (highlight ? "bg-muted/50" : "")}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex min-w-0 items-start gap-3">
         <span className="rounded-lg bg-muted px-2.5 py-1.5 text-sm font-semibold tabular-nums">{k.time}</span>
@@ -296,16 +306,17 @@ export function BusinessSummary({ base, busy, onSave, onError, onAuth }: Props) 
   const occupancy = stats && stats.availableMinutes > 0 ? Math.round(stats.bookedMinutes / stats.availableMinutes * 100) : null;
   return <section className={card + " space-y-5"}>
     <div className="flex flex-wrap items-end justify-between gap-3">
-      <div><h2 className="text-lg font-semibold">Resumo do negócio</h2><p className="text-sm text-muted-foreground">Financeiro, demanda e ocupação sem misturar caixa com reservas.</p></div>
+      <div><h2 className="text-lg font-semibold">Financeiro</h2><p className="text-sm text-muted-foreground">Acompanhe o dinheiro que entrou e quais serviços compensam mais.</p></div>
       <label className="grid gap-1 text-sm font-medium">Mês de referência<input className="min-h-10 rounded-lg border bg-background px-3" type="month" min="2000-01" max="2100-12" value={month}
         onChange={(event) => { if (event.target.value && event.target.validity.valid) setMonth(event.target.value); }} /></label>
     </div>
     {!stats ? <RemoteNotice error={summary.error} reload={summary.reload} label="Carregando resumo…" /> : <>
-      <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {[["Recebido no mês", format(stats.receivedCents)], ["A receber dos atendimentos do mês", format(stats.pendingCents)],
-          ["Previsto em reservas futuras", format(stats.forecastCents)], ["Lucro estimado do mês", result == null ? "Dados incompletos" : format(result)]].map(([label,value]) =>
+      <dl className="grid gap-2 sm:grid-cols-3">
+        {[["Recebi neste mês", format(stats.receivedCents)], ["Falta receber dos atendimentos do mês", format(stats.pendingCents)],
+          ["Lucro estimado do mês", result == null ? "Dados incompletos" : format(result)]].map(([label,value]) =>
           <div key={label} className="rounded-xl border bg-muted/30 p-3"><dt className="text-sm text-muted-foreground">{label}</dt><dd className="mt-1 font-semibold tabular-nums">{value}</dd></div>)}
       </dl>
+      <p className="text-sm text-muted-foreground"><strong className="text-foreground">Previsto em reservas futuras neste mês:</strong> {format(stats.forecastCents)}.</p>
       <p className="text-sm text-muted-foreground">O lucro estimado usa o valor dos atendimentos concluídos no mês, mesmo se ainda não foram pagos, menos custos diretos e despesas fixas. Recebimentos seguem a data do pagamento.
         {stats.missingCosts > 0 && " Falta registrar o custo de " + stats.missingCosts + " atendimento(s)."}</p>
       <form className="studio-form rounded-xl border p-3" key={month + ":" + stats.fixedCostsCents} onSubmit={async (event: FormEvent<HTMLFormElement>) => {
@@ -343,11 +354,12 @@ export function BusinessSummary({ base, busy, onSave, onError, onAuth }: Props) 
           <h3 className="font-semibold">Agenda do mês</h3>
           <p className="text-sm">{stats.cancelled} cancelamento(s) · {stats.noShows} falta(s)</p>
           {occupancy !== null && <p className="text-sm">{occupancy}% do tempo disponível ocupado pela agenda <span className="text-muted-foreground">(estimativa com os horários atuais)</span>.</p>}
-          {stats.busyHours.length > 0 && <><p className="text-sm text-muted-foreground">Faixas com mais reservas:</p>
-            <ul className="space-y-1 text-sm">{stats.busyHours.map((h) => <li key={h.weekday + ":" + h.hour}>{weekdays[h.weekday-1]} às {String(h.hour).padStart(2,"0")}h · {h.total}</li>)}</ul>
-          </>}
-          {stats.idleHours.length > 0 && <><p className="pt-2 text-sm text-muted-foreground">Faixas com mais tempo livre no mês:</p>
-            <ul className="space-y-1 text-sm">{stats.idleHours.map((h) => <li key={h.weekday + ":" + h.hour}>{weekdays[h.weekday-1]} às {String(h.hour).padStart(2,"0")}h · {Math.round(h.free/6)/10}h livres</li>)}</ul></>}
+          {(stats.busyHours.length > 0 || stats.idleHours.length > 0) && <details><summary className="cursor-pointer text-sm font-medium">Ver padrões de horários no mês</summary>
+            {stats.busyHours.length > 0 && <><p className="mt-2 text-sm text-muted-foreground">Com mais reservas</p>
+              <ul className="space-y-1 text-sm">{stats.busyHours.map((h) => <li key={h.weekday + ":" + h.hour}>{weekdays[h.weekday-1]} às {String(h.hour).padStart(2,"0")}h · {h.total}</li>)}</ul></>}
+            {stats.idleHours.length > 0 && <><p className="mt-2 text-sm text-muted-foreground">Com mais tempo livre</p>
+              <ul className="space-y-1 text-sm">{stats.idleHours.map((h) => <li key={h.weekday + ":" + h.hour}>{weekdays[h.weekday-1]} às {String(h.hour).padStart(2,"0")}h · {Math.round(h.free/6)/10}h livres</li>)}</ul></>}
+          </details>}
         </section>
         <section className="space-y-2 rounded-xl border p-4">
           <h3 className="font-semibold">Nesta semana</h3>

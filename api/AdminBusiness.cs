@@ -20,6 +20,37 @@ static class AdminBusiness
 
     public static void Map(RouteGroupBuilder admin,NpgsqlDataSource db)
     {
+        admin.MapGet("/today", async (HttpContext ctx) =>
+        {
+            await using var cmd=db.CreateCommand("""
+                WITH local_now AS (SELECT timezone('America/Sao_Paulo',statement_timestamp()) AS value),
+                next_visit AS (
+                    SELECT id,customer,service_name,starts_at FROM booking,local_now WHERE salon_id=$1
+                      AND canceled_at IS NULL AND outcome='scheduled' AND starts_at>=local_now.value
+                      AND starts_at<local_now.value::date+1 ORDER BY starts_at,id LIMIT 1
+                ), tasks AS (
+                    SELECT id,customer,service_name,starts_at,outcome,
+                        CASE WHEN outcome='completed' THEN amount_due_cents-coalesce(paid_cents,0) END AS balance
+                    FROM booking,local_now WHERE salon_id=$1 AND canceled_at IS NULL AND ends_at<=local_now.value
+                      AND (outcome='scheduled' OR (outcome='completed' AND amount_due_cents>coalesce(paid_cents,0)))
+                ), visible AS (
+                    SELECT id,customer,service_name,starts_at,outcome,balance FROM tasks
+                    ORDER BY starts_at DESC,id LIMIT 6
+                )
+                SELECT jsonb_build_object(
+                    'day',(SELECT value::date FROM local_now),
+                    'next',(SELECT jsonb_build_object('id',id,'customer',customer,'service',service_name,'time',to_char(starts_at,'HH24:MI')) FROM next_visit),
+                    'tasks',(SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'customer',customer,'service',service_name,
+                         'day',starts_at::date,'time',to_char(starts_at,'HH24:MI'),'balanceCents',balance,
+                         'kind',CASE WHEN outcome='scheduled' THEN 'review' ELSE 'payment' END) ORDER BY starts_at DESC,id),'[]'::jsonb) FROM visible),
+                    'reviewCount',count(*) FILTER (WHERE outcome='scheduled'),
+                    'paymentCount',count(*) FILTER (WHERE outcome='completed'),
+                    'pendingCents',coalesce(sum(balance),0)
+                )::text FROM tasks
+                """);
+            Add(cmd,SalonId(ctx));
+            return Results.Ok(JsonSerializer.Deserialize<JsonElement>((string)(await cmd.ExecuteScalarAsync(ctx.RequestAborted))!));
+        });
         admin.MapGet("/bookings", async (DateOnly day, bool? includeCanceled, HttpContext ctx) =>
         {
             if (day.Year is <2000 or >2100) return Results.BadRequest();

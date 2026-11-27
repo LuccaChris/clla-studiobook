@@ -93,6 +93,7 @@ somente em banco descartável. Esse teste altera os dados de demonstração.
 
 A migração `db/005-admin-business.sql` precisa ser aplicada **depois** da 004 e **antes** de subir a nova API. Ela preserva reservas antigas; quando a origem não foi registrada, o resumo mostra “Não registrada”. A agenda continua sendo de um único profissional por local.
 
+- **Hoje:** a tela inicial mostra o próximo atendimento do dia, o atalho de novo agendamento, pendências com links para resolver e horários publicáveis de amanhã por serviço. Perfil, serviços e horários ficam agrupados em Configurações.
 - **Agenda:** adicione reservas de telefone, WhatsApp e balcão. O StudioBook usa a mesma disponibilidade para evitar dupla reserva. Remarcar preserva a duração e, nas reservas online, o link do cliente. Ao fim do horário, marque como concluído ou falta. Em um atendimento concluído, registre o preço real, o custo direto e um ou mais recebimentos separados.
 - **Horários:** bloqueie só parte do dia, personalize o expediente de uma data e defina antecedência, prazo de alteração para o cliente e intervalo entre serviços. Um horário especial substitui a pausa regular naquele dia. Mudanças que invalidem reservas futuras são rejeitadas. Instruções de preparo do serviço aparecem antes de reservar.
 - **Lista de espera:** o dono inclui nome, WhatsApp, serviço e data, com horário opcional. O link só abre uma mensagem pronta; não envia nem segura a vaga. Após o aceite, confirmar cria a reserva e fecha a entrada no mesmo passo, desde que a vaga continue livre.
