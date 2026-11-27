@@ -5,6 +5,7 @@ import Link from "next/link";
 import Header from "@/components/header";
 import ReservationForm from "@/components/reservation-form";
 import { getSalon } from "@/data/barbershop";
+import { getSalonBrand } from "@/lib/salon-brand";
 import { salonCategories } from "@/lib/salon-directory";
 
 const salonIcons = { salon: Sparkles, barbershop: Scissors, clinic: HeartPulse, nutrition: Leaf };
@@ -13,25 +14,35 @@ export default async function SalonPage({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const salon = await getSalon(slug);
   const Icon = salonIcons[salon.layout] ?? Sparkles;
-  const hasCover = salon.imageUrl.startsWith("https://") ||
-    (salon.imageUrl.startsWith("/") && !salon.imageUrl.startsWith("//"));
+  const brand = getSalonBrand(slug);
+  const cover = brand?.cover ?? salon.imageUrl;
+  const hasCover = cover.startsWith("https://") ||
+    (cover.startsWith("/") && !cover.startsWith("//"));
 
   return (
     <>
       <Header />
-      <main className="salon-profile" data-layout={salon.layout}>
+      <main className="salon-profile" data-layout={salon.layout} data-brand={brand ? slug : undefined}>
         <div className="salon-profile-inner">
           <Link className="salon-back" href="/">Voltar aos meus salões</Link>
           <header className="salon-identity">
             {hasCover && (
               <div className="salon-cover">
-                <Image src={salon.imageUrl} alt="" fill unoptimized />
+                <Image
+                  src={cover}
+                  alt=""
+                  fill
+                  preload={Boolean(brand)}
+                  sizes="(max-width: 767px) 100vw, 50vw"
+                  unoptimized
+                />
               </div>
             )}
             <div className="salon-identity-text">
-              <Icon aria-hidden size={36} />
+              {brand ? <span className="brand-monogram" aria-hidden>{brand.monogram}</span> : <Icon aria-hidden size={36} />}
               <p className="salon-category">{salonCategories[salon.layout]}</p>
               <h1>{salon.name}</h1>
+              {brand && <p className="brand-tagline">{brand.tagline}</p>}
               <p>{salon.description}</p>
               <p className="salon-address">{salon.address}</p>
             </div>
