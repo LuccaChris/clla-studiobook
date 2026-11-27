@@ -68,22 +68,55 @@ app.MapGet("/api/salons", async () =>
     while (await r.ReadAsync()) salons.Add(new { slug=r.GetString(0), name=r.GetString(1), address=r.GetString(2), imageUrl=r.GetString(3) });
     return salons;
 });
+app.MapGet("/api/salons/directory/lookup", async (string? phone) =>
+{
+    if (phone is null || phone.Length > 32 || !Regex.IsMatch(phone, @"^\+?[0-9 ().-]+$"))
+        return Results.BadRequest();
+
+    var number = Regex.Replace(phone, "[^0-9]", "");
+    if (number.Length is 10 or 11) number = "55" + number;
+    if (!Regex.IsMatch(number, @"^55[1-9][0-9]{9,10}$")) return Results.BadRequest();
+
+    await using var cmd = db.CreateCommand("""
+        SELECT slug, nome, address, layout
+        FROM "BarberShop" WHERE directory_phone=$1
+        """);
+    cmd.Parameters.AddWithValue(number);
+    await using var reader = await cmd.ExecuteReaderAsync();
+    if (!await reader.ReadAsync()) return Results.NotFound();
+    return Results.Ok(new
+    {
+        slug = reader.GetString(0),
+        name = reader.GetString(1),
+        address = reader.GetString(2),
+        layout = reader.GetString(3)
+    });
+});
+
 var salon = app.MapGroup("/api/salons/{slug}");
 salon.MapGet("", async (string slug) =>
 {
     await using var cmd = db.CreateCommand("""
-        SELECT b.nome,b.address,b.description,s.id,s.nome,s."priceInCents",s.minutes
+        SELECT b.nome,b.address,b.description,b."imageUrl",b.layout,s.id,s.nome,s."priceInCents",s.minutes
         FROM "BarberShop" b LEFT JOIN "BarbershopService" s ON s."barbershopId"=b.id
         WHERE b.slug=$1 ORDER BY s.nome,s.id
         """);
     cmd.Parameters.AddWithValue(slug);
     await using var r = await cmd.ExecuteReaderAsync();
     if (!await r.ReadAsync()) return Results.NotFound();
-    var name=r.GetString(0); var address=r.GetString(1); var description=r.GetString(2);
-    var services=new List<object>();
-    do { if (!r.IsDBNull(3)) services.Add(new { id=r.GetString(3), name=r.GetString(4), priceInCents=r.GetInt32(5), minutes=r.GetInt32(6) }); }
+    var name = r.GetString(0);
+    var address = r.GetString(1);
+    var description = r.GetString(2);
+    var imageUrl = r.GetString(3);
+    var layout = r.GetString(4);
+    var services = new List<object>();
+    do
+    {
+        if (!r.IsDBNull(5))
+            services.Add(new { id = r.GetString(5), name = r.GetString(6), priceInCents = r.GetInt32(7), minutes = r.GetInt32(8) });
+    }
     while (await r.ReadAsync());
-    return Results.Ok(new { name,address,description,services });
+    return Results.Ok(new { name, address, description, imageUrl, layout, services });
 });
 salon.MapPost("/login", async (string slug, Login input, HttpContext ctx) =>
 {

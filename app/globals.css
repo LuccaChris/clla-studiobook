@@ -128,3 +128,201 @@
 .studio-form input, .studio-form select { border: 1px solid var(--border); border-radius: .5rem; padding: .6rem; width: 100%; background: var(--background); }
 .studio-form button { background: var(--primary); color: var(--primary-foreground); border-radius: .5rem; padding: .6rem 1rem; cursor: pointer; }
 .studio-form button:disabled { opacity: .55; cursor: default; }
+
+.salon-profile {
+  --profile-surface: #fff7f3;
+  --profile-ink: #382217;
+  --profile-accent: #8f3a5c;
+  --profile-card: #fffdfb;
+  min-height: calc(100vh - 4rem);
+  background: var(--profile-surface);
+  color: var(--profile-ink);
+  padding: 1.5rem 1rem 3rem;
+}
+
+.salon-profile-inner {
+  display: grid;
+  gap: 1rem;
+  max-width: 67rem;
+  margin-inline: auto;
+}
+
+.salon-back, .salon-admin-link {
+  justify-self: start;
+  font-size: .875rem;
+  text-underline-offset: .2em;
+  text-decoration: underline;
+}
+
+.salon-identity {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.75rem;
+  background: var(--profile-accent);
+  color: white;
+}
+
+.salon-cover {
+  position: absolute;
+  inset: 0;
+  opacity: .28;
+}
+
+.salon-cover img { object-fit: cover; }
+
+.salon-identity-text {
+  position: relative;
+  padding: clamp(1.6rem, 4.7vw, 4rem);
+  display: grid;
+  gap: .65rem;
+  justify-items: start;
+}
+
+.salon-identity h1 {
+  font-size: clamp(2.15rem, 5.5vw, 4rem);
+  font-weight: 750;
+  line-height: 1.06;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+
+.salon-category { font-size: .875rem; font-weight: 650; }
+.salon-address { font-size: .875rem; }
+
+.salon-reservation {
+  min-width: 0;
+  background: var(--profile-card);
+  border: 1px solid color-mix(in srgb, var(--profile-ink) 17%, transparent);
+  border-radius: 1.3rem;
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.salon-profile[data-layout="barbershop"] {
+  --profile-surface: #242220;
+  --profile-ink: #fff1da;
+  --profile-accent: #653a24;
+  --profile-card: #302b26;
+  --background: #3a322a;
+  --border: #69574a;
+}
+
+[data-layout="barbershop"] .salon-identity,
+[data-layout="barbershop"] .salon-reservation { border-radius: .25rem; }
+
+[data-layout="barbershop"] .salon-identity h1 {
+  font-family: Georgia, serif;
+  letter-spacing: -.02em;
+}
+
+.salon-profile[data-layout="clinic"] {
+  --profile-surface: #eafaf7;
+  --profile-ink: #173e3c;
+  --profile-accent: #21605a;
+  --profile-card: #fcfffd;
+}
+
+[data-layout="clinic"] .salon-identity-text {
+  justify-items: center;
+  text-align: center;
+}
+
+[data-layout="clinic"] .salon-reservation {
+  width: min(100%, 37rem);
+  justify-self: center;
+}
+
+.salon-profile[data-layout="nutrition"] {
+  --profile-surface: #f4f6e9;
+  --profile-ink: #293a1a;
+  --profile-accent: #42582d;
+  --profile-card: #fffffa;
+}
+
+[data-layout="nutrition"] .salon-identity {
+  border-radius: 3rem 3rem 1rem 1rem;
+}
+
+.reservation-form button {
+  background: var(--profile-accent);
+  color: white;
+}
+
+.booking-calendar {
+  border: 1px solid color-mix(in srgb, var(--profile-ink) 20%, transparent);
+  border-radius: .85rem;
+  padding: .7rem;
+}
+
+.calendar-heading {
+  display: grid;
+  grid-template-columns: 2.35rem 1fr 2.35rem;
+  gap: .3rem;
+  align-items: center;
+  text-align: center;
+  font-weight: 650;
+  text-transform: capitalize;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: .18rem;
+  text-align: center;
+  margin-top: .45rem;
+}
+
+.calendar-grid span { font-size: .875rem; }
+
+.salon-profile .calendar-grid button, .salon-profile .calendar-heading button {
+  min-height: 2.35rem;
+  padding: 0;
+  background: transparent;
+  color: var(--profile-ink);
+  border: 1px solid transparent;
+}
+
+.salon-profile .calendar-grid button:enabled {
+  background: color-mix(in srgb, var(--profile-accent) 12%, var(--profile-card));
+}
+
+.salon-profile .calendar-grid button:enabled:hover,
+.salon-profile .calendar-heading button:enabled:hover { border-color: var(--profile-accent); }
+
+.salon-profile .calendar-grid button[aria-pressed="true"]:enabled {
+  color: white;
+  background: var(--profile-accent);
+}
+
+.salon-profile .calendar-grid button:disabled,
+.salon-profile .calendar-heading button:disabled { opacity: .35; }
+
+.booking-message:not(:empty) { margin-top: 1rem; font-weight: 600; }
+
+@media (min-width: 48rem) {
+  [data-layout="salon"] .salon-profile-inner,
+  [data-layout="nutrition"] .salon-profile-inner {
+    grid-template-columns: .9fr 1.1fr;
+    align-items: start;
+  }
+
+  [data-layout="nutrition"] .salon-profile-inner { grid-template-columns: 1.1fr .9fr; }
+  [data-layout="salon"] .salon-back,
+  [data-layout="nutrition"] .salon-back,
+  [data-layout="salon"] .salon-admin-link,
+  [data-layout="nutrition"] .salon-admin-link { grid-column: 1 / -1; }
+
+  [data-layout="nutrition"] .salon-identity {
+    grid-column: 2;
+    grid-row: 2;
+    border-radius: 8rem 8rem 1rem 1rem;
+    min-height: 26rem;
+    align-content: end;
+  }
+
+  [data-layout="nutrition"] .salon-reservation { grid-column: 1; grid-row: 2; }
+
+  [data-layout="barbershop"] .salon-reservation {
+    width: min(100%, 42rem);
+    justify-self: end;
+  }
+}
