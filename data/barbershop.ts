@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { DirectorySalon } from "@/lib/salon-directory";
 
 export type Salon = { slug: string; name: string; address: string; imageUrl: string };
-export type Service = { id: string; name: string; priceInCents: number; minutes: number };
+export type Service = { id: string; name: string; priceInCents: number; minutes: number; preparation?: string };
 export type SalonDetail = Omit<DirectorySalon, "slug"> & {
   description: string;
   imageUrl: string;

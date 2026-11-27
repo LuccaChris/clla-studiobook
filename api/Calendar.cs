@@ -16,28 +16,39 @@ static class Calendar
         FROM requested_days d
         JOIN "BarberShop" b ON b.slug=$1
         JOIN "BarbershopService" s ON s."barbershopId"=b.id AND s.id=$2 AND s.active
-        CROSS JOIN LATERAL generate_series(d.day+b.opens,
-            d.day+b.closes-s.minutes*interval '1 minute',interval '15 minutes') tick
-        WHERE extract(isodow FROM d.day)::int=ANY(b.workdays)
+        LEFT JOIN salon_day_hours h ON h.salon_id=b.id AND h.day=d.day
+        CROSS JOIN LATERAL generate_series(d.day+COALESCE(h.opens,b.opens),
+            d.day+COALESCE(h.closes,b.closes)-s.minutes*interval '1 minute',interval '15 minutes') tick
+        WHERE (h.day IS NOT NULL OR extract(isodow FROM d.day)::int=ANY(b.workdays))
           AND d.day BETWEEN timezone('America/Sao_Paulo',now())::date
                         AND timezone('America/Sao_Paulo',now())::date+90
-          AND tick > timezone('America/Sao_Paulo',now())
+          AND tick > timezone('America/Sao_Paulo',clock_timestamp()) + b.lead_minutes*interval '1 minute'
           AND NOT EXISTS (SELECT FROM salon_blocked_day d0 WHERE d0.salon_id=b.id AND d0.day=d.day)
-          AND (b.break_start IS NULL OR tick + s.minutes*interval '1 minute' <= d.day+b.break_start
+          AND (h.day IS NOT NULL OR b.break_start IS NULL OR tick + s.minutes*interval '1 minute' <= d.day+b.break_start
                                    OR tick >= d.day+b.break_end)
-          AND NOT EXISTS (SELECT FROM booking k WHERE k.salon_id=b.id AND k.canceled_at IS NULL
-              AND k.starts_at < tick+s.minutes*interval '1 minute' AND k.ends_at > tick)
+          AND NOT EXISTS (SELECT FROM salon_time_block x WHERE x.salon_id=b.id AND x.day=d.day
+              AND tick < d.day+x.ends AND tick+s.minutes*interval '1 minute' > d.day+x.starts)
+          AND NOT EXISTS (SELECT FROM booking k WHERE k.salon_id=b.id AND k.canceled_at IS NULL AND k.outcome<>'no_show'
+              AND k.starts_at < tick+s.minutes*interval '1 minute'+b.buffer_minutes*interval '1 minute'
+              AND k.ends_at+b.buffer_minutes*interval '1 minute' > tick)
         """;
+    // The owner can move any of their future bookings, including legacy rows without a service ID.
+    internal static readonly string OwnerRescheduleAvailability = "WITH requested_days AS (" + Day + ") " +
+        SlotRules.Replace(" + b.lead_minutes*interval '1 minute'", "", StringComparison.Ordinal)
+            .Replace("""JOIN "BarbershopService" s ON s."barbershopId"=b.id AND s.id=$2 AND s.active""",
+                "JOIN booking original ON original.id=$4 AND original.salon_id=b.id AND b.id=$2 AND original.canceled_at IS NULL AND original.outcome='scheduled' AND original.starts_at>timezone('America/Sao_Paulo',clock_timestamp())", StringComparison.Ordinal)
+            .Replace("s.minutes*interval '1 minute'","(original.ends_at-original.starts_at)",StringComparison.Ordinal)
+            .Replace("k.canceled_at IS NULL", "k.canceled_at IS NULL AND k.id<>$4", StringComparison.Ordinal);
     // Private rescheduling excludes only the already verified booking, not any other reservation.
-    static readonly string RescheduleAvailability = "WITH requested_days AS (" + Day + ") " +
+    internal static readonly string RescheduleAvailability = "WITH requested_days AS (" + Day + ") " +
         SlotRules.Replace("AND s.active", "JOIN booking original ON original.id=$4 AND original.salon_id=b.id", StringComparison.Ordinal)
             .Replace("s.minutes*interval '1 minute'","(original.ends_at-original.starts_at)",StringComparison.Ordinal)
             .Replace("k.canceled_at IS NULL", "k.canceled_at IS NULL AND k.id<>$4", StringComparison.Ordinal);
-    const string DailyAvailability = "WITH requested_days AS (" + Day + ") " + SlotRules;
+    internal const string DailyAvailability = "WITH requested_days AS (" + Day + ") " + SlotRules;
+    internal static readonly string OwnerDailyAvailability = DailyAvailability.Replace(" + b.lead_minutes*interval '1 minute'", "", StringComparison.Ordinal);
     const string PeriodAvailability = "WITH requested_days AS (" + Period +
         "), available AS (" + SlotRules + ") SELECT DISTINCT day FROM available ORDER BY day";
 
-    internal const int ChangeCutoffHours = 2;
 
     public static void Map(RouteGroupBuilder salon, NpgsqlDataSource db)
     {
@@ -68,6 +79,8 @@ static class Calendar
                 string.IsNullOrWhiteSpace(input.ServiceId) ||
                 !TimeOnly.TryParseExact(input.Time,"HH:mm",CultureInfo.InvariantCulture,DateTimeStyles.None,out var time))
                 return Results.BadRequest();
+            var phone=AdminSettings.NormalizePhone(input.Phone);
+            if (!string.IsNullOrWhiteSpace(input.Phone) && phone is null) return Results.BadRequest();
             await using var conn=await db.OpenConnectionAsync();
             await using var tx=await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted);
             // Serialize check + insert for the same salon, also across API replicas.
@@ -77,8 +90,8 @@ static class Calendar
             var secret = RandomNumberGenerator.GetBytes(32);
             var id = Guid.NewGuid();
             await using var insert=new NpgsqlCommand("""
-                INSERT INTO booking(id,salon_id,service_name,customer,starts_at,ends_at,service_id,price_in_cents,manage_hash)
-                SELECT $4,$5,s.nome,$6,tick,tick+s.minutes*interval '1 minute',s.id,s."priceInCents",$8
+                INSERT INTO booking(id,salon_id,service_name,customer,starts_at,ends_at,service_id,price_in_cents,manage_hash,origin,customer_phone)
+                SELECT $4,$5,s.nome,$6,tick,tick+s.minutes*interval '1 minute',s.id,s."priceInCents",$8,'studiobook',$9
                 FROM (
                 """ + DailyAvailability + """
 
@@ -91,6 +104,7 @@ static class Calendar
             insert.Parameters.AddWithValue(input.Customer.Trim());
             insert.Parameters.AddWithValue(input.Day.ToDateTime(time));
             insert.Parameters.AddWithValue(SHA256.HashData(secret));
+            insert.Parameters.Add(AdminSettings.NullableParameter(NpgsqlTypes.NpgsqlDbType.Text,phone));
             if(await insert.ExecuteNonQueryAsync()!=1) return Results.Conflict();
             await tx.CommitAsync();
             return Results.Ok(new { time=input.Time, day=input.Day, manageCode=Convert.ToHexStringLower(secret) });
@@ -144,7 +158,7 @@ static class Calendar
         SELECT k.id,b.slug,b.nome,b.address,k.service_id,k.service_name,k.price_in_cents,k.starts_at,
                extract(epoch FROM k.ends_at-k.starts_at)::int/60,
                k.canceled_at IS NOT NULL, k.starts_at <= timezone('America/Sao_Paulo',clock_timestamp()),
-               k.starts_at > timezone('America/Sao_Paulo',clock_timestamp()) + $2 * interval '1 hour',k.revision
+               k.starts_at > timezone('America/Sao_Paulo',clock_timestamp()) + b.cutoff_hours * interval '1 hour',k.revision,b.cutoff_hours
         FROM booking k JOIN "BarberShop" b ON b.id=k.salon_id WHERE k.manage_hash=$1
         """;
 
@@ -152,7 +166,6 @@ static class Calendar
     {
         await using var cmd = db.CreateCommand(ReadSql);
         cmd.Parameters.AddWithValue(hash);
-        cmd.Parameters.AddWithValue(ChangeCutoffHours);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         var starts = r.GetDateTime(7);
@@ -160,7 +173,7 @@ static class Calendar
         return new CustomerBooking(r.GetGuid(0),r.GetString(1),r.GetString(2),r.GetString(3),r.GetString(4),
             r.GetString(5),r.GetInt32(6),starts.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             starts.ToString("HH:mm", CultureInfo.InvariantCulture),r.GetInt32(8),status,
-            status=="upcoming" && r.GetBoolean(11),ChangeCutoffHours,r.GetInt32(12));
+            status=="upcoming" && r.GetBoolean(11),r.GetInt32(13),r.GetInt32(12));
     }
 
     static async Task<IResult> ChangeBooking(NpgsqlDataSource db, string? code, int? revision,
@@ -184,13 +197,12 @@ static class Calendar
         DateTime previous;
         await using (var current = new NpgsqlCommand("""
             SELECT id,service_id,starts_at,
-                   canceled_at IS NULL AND starts_at > timezone('America/Sao_Paulo',clock_timestamp()) + $2 * interval '1 hour'
+                   canceled_at IS NULL AND outcome='scheduled' AND starts_at > timezone('America/Sao_Paulo',clock_timestamp()) + (SELECT cutoff_hours FROM "BarberShop" WHERE id=booking.salon_id) * interval '1 hour'
                    ,revision
             FROM booking WHERE manage_hash=$1 FOR UPDATE
             """,conn,tx))
         {
             current.Parameters.AddWithValue(hash);
-            current.Parameters.AddWithValue(ChangeCutoffHours);
             await using var r = await current.ExecuteReaderAsync(ct);
             if (!await r.ReadAsync(ct)) return Results.NotFound();
             (id, serviceId, previous) = (r.GetGuid(0),r.GetString(1),r.GetDateTime(2));
@@ -221,14 +233,14 @@ static class Calendar
         return Results.NoContent();
     }
 
-    static void AddSelection(NpgsqlCommand cmd,string slug,string serviceId,DateOnly day)
+    internal static void AddSelection(NpgsqlCommand cmd,string slug,string serviceId,DateOnly day)
     {
         cmd.Parameters.AddWithValue(slug);
         cmd.Parameters.AddWithValue(serviceId);
         cmd.Parameters.AddWithValue(day);
     }
 }
-record Reservation(string Customer,string ServiceId,DateOnly Day,string Time);
+record Reservation(string Customer,string ServiceId,DateOnly Day,string Time,string? Phone);
 
 record BookingCode(string? Code);
 record BookingDay(string? Code, DateOnly Day);

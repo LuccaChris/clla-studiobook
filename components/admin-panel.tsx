@@ -1,20 +1,21 @@
 "use client";
 
-import { CalendarDays, Clock3, ExternalLink, List, LogOut, Store } from "lucide-react";
+import { BarChart3, CalendarDays, Clock3, ExternalLink, List, LogOut, Store, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { postJson, salonToday } from "@/lib/calendar";
 
-import { type AdminConfig, HoursSettings, ProfileSettings, type SaveSettings, ServicesSettings } from "./admin-settings";
-
-type Booking = { id: string; customer: string; service: string; time: string };
+import { type AdminBooking, AdminBookingRow, BusinessSummary, NewAdminBooking, ScheduleControls, WaitlistPanel } from "./admin-business";
+import { type AdminConfig, HoursSettings, ProfileSettings, type SaveBusiness, type SaveSettings, ServicesSettings } from "./admin-settings";
 type Mode = "loading" | "login" | "ready" | "error";
-type Tab = "agenda" | "perfil" | "servicos" | "horarios";
+type Tab = "agenda" | "resumo" | "espera" | "perfil" | "servicos" | "horarios";
 
 const tabs = [
   { id: "agenda", label: "Agenda", Icon: CalendarDays },
+  { id: "resumo", label: "Resumo", Icon: BarChart3 },
+  { id: "espera", label: "Lista de espera", Icon: Users },
   { id: "perfil", label: "Perfil", Icon: Store },
   { id: "servicos", label: "Serviços", Icon: List },
   { id: "horarios", label: "Horários e folgas", Icon: Clock3 },
@@ -34,7 +35,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
   const [day, setDay] = useState(salonToday);
   const [mode, setMode] = useState<Mode>("loading");
   const [tab, setTab] = useState<Tab>("agenda");
-  const [items, setItems] = useState<Booking[] | null>(null);
+  const [items, setItems] = useState<AdminBooking[] | null>(null);
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -57,7 +58,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
     const outdated = () => controller.signal.aborted || authVersion.current !== version;
     async function load() {
       try {
-        const response = await fetch(base + "/admin/bookings?day=" + encodeURIComponent(day), {
+        const response = await fetch(base + "/admin/bookings?day=" + encodeURIComponent(day) + "&includeCanceled=true", {
           signal: controller.signal,
           cache: "no-store",
         });
@@ -70,7 +71,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
           return;
         }
         if (!response.ok) throw new Error();
-        const bookings: Booking[] = await response.json();
+        const bookings: AdminBooking[] = await response.json();
         if (outdated()) return;
         setItems(bookings);
         setAgendaFailed(false);
@@ -86,7 +87,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
   }, [base, day, agendaRevision]);
 
   useEffect(() => {
-    if (mode !== "ready" || tab === "agenda") return;
+    if (mode !== "ready" || tab === "resumo") return;
     const controller = new AbortController();
     const version = authVersion.current;
     const outdated = () => controller.signal.aborted || authVersion.current !== version;
@@ -116,6 +117,18 @@ export default function AdminPanel({ slug }: { slug: string }) {
     return () => controller.abort();
   }, [base, mode, tab, settingsRevision]);
 
+  const onAuth = useCallback(() => {
+    authVersion.current += 1;
+    setItems(null);
+    setConfig(null);
+    setMode("login");
+    setMessage("Entre novamente para administrar este local.");
+    setFailed(true);
+  }, []);
+  const reloadAgenda = () => setAgendaRevision((value) => value + 1);
+  const saveBusiness: SaveBusiness = (path, payload, success) => mutate("/admin" + path, payload, success);
+  const businessProps = { base, busy, onSave: saveBusiness, onError: (value: string) => status(value, true), onAuth };
+
   async function mutate(path: string, payload: unknown, success?: string) {
     setBusy(true);
     status("");
@@ -132,7 +145,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
       if (response.status === 409) {
         const conflict = path === "/admin/profile"
           ? "Este telefone já está em uso por outro estabelecimento."
-          : path === "/admin/hours" || path === "/admin/blocks"
+          : path === "/admin/hours" || path === "/admin/blocks" || path === "/admin/special-hours" || path === "/admin/special-hours/remove" || path === "/admin/time-blocks"
             ? "A alteração entra em conflito com uma reserva já existente. Confira a agenda e tente novamente."
             : "Há um conflito com os dados atuais. Confira o cadastro e tente novamente.";
         status(conflict, true);
@@ -233,7 +246,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
       <Link href={"/s/" + salon} className={secondary}><ExternalLink size={16} aria-hidden /> Ver página pública</Link>
       <button type="button" className={secondary} disabled={busy} onClick={() => void logout()}><LogOut size={16} aria-hidden /> Sair</button>
     </div>
-    <div className="grid grid-cols-2 gap-1 rounded-xl border bg-muted/60 p-1 sm:grid-cols-4" role="tablist" aria-label="Painel administrativo">
+    <div className="grid grid-cols-2 gap-1 rounded-xl border bg-muted/60 p-1 sm:grid-cols-3 lg:grid-cols-6" role="tablist" aria-label="Painel administrativo">
       {tabs.map(({ id, label, Icon }, position) => <button type="button" key={id} id={"admin-tab-" + id}
         ref={(element) => { tabRefs.current[id] = element; }}
         role="tab" aria-selected={tab === id} aria-controls={"admin-panel-" + id} tabIndex={tab === id ? 0 : -1}
@@ -246,7 +259,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
     </div>
     {announcement}
     {tabs.map(({ id }) => <div key={id} id={"admin-panel-" + id} role="tabpanel" aria-labelledby={"admin-tab-" + id} hidden={tab !== id}>
-      {tab !== id ? null : id === "agenda" ? <section className={screen}>
+      {tab !== id ? null : id === "resumo" ? <BusinessSummary {...businessProps} /> : id === "espera" ? <WaitlistPanel {...businessProps} config={config} onDone={reloadAgenda} /> : id === "agenda" ? <section className={screen}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Agenda do estabelecimento</h2>
@@ -262,25 +275,12 @@ export default function AdminPanel({ slug }: { slug: string }) {
               }} />
           </label>
         </div>
+        <div className="mt-4"><NewAdminBooking key={day + ":" + agendaRevision} {...businessProps} config={config} day={day} onDone={reloadAgenda} /></div>
         {agendaFailed ? <button className={secondary + " mt-4"} type="button" onClick={() => setAgendaRevision((value) => value + 1)}>Falha ao carregar a agenda. Tentar novamente</button>
           : items === null ? <p className="mt-4 text-sm text-muted-foreground" role="status">Carregando agenda…</p>
             : items.length ? <ul className="mt-5 divide-y overflow-hidden rounded-xl border" aria-label="Reservas do dia">
-              {items.map((booking) => <li className="flex flex-wrap items-center justify-between gap-3 p-3 sm:p-4" key={booking.id}>
-                <div className="flex items-start gap-3">
-                  <span className="rounded-lg bg-muted px-2.5 py-1.5 text-sm font-semibold tabular-nums">{booking.time}</span>
-                  <div className="min-w-0">
-                    <p className="wrap-anywhere font-semibold">{booking.customer}</p>
-                    <p className="wrap-anywhere text-sm text-muted-foreground">{booking.service}</p>
-                  </div>
-                </div>
-                <button type="button" className={secondary + " text-destructive"} disabled={busy} onClick={async () => {
-                  if (!window.confirm("Cancelar a reserva de " + booking.customer + "?")) return;
-                  if (await mutate("/admin/bookings/" + encodeURIComponent(booking.id) + "/cancel", {}, "Reserva cancelada.")) {
-                    setItems((entries) => entries?.filter((entry) => entry.id !== booking.id) ?? null);
-                    setAgendaRevision((value) => value + 1);
-                  }
-                }}>Cancelar</button>
-              </li>)}
+              {items.map((booking) => <AdminBookingRow key={booking.id + ":" + booking.revision} {...businessProps}
+                booking={booking} day={day} onDone={reloadAgenda} />)}
             </ul> : <p className="mt-5 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Nenhuma reserva para esta data.</p>}
       </section> : settingsFailed ? <button className={secondary} type="button" onClick={() => {
         setSettingsFailed(false);
@@ -290,7 +290,7 @@ export default function AdminPanel({ slug }: { slug: string }) {
           : id === "perfil" ? <ProfileSettings key={JSON.stringify([config.name, config.address, config.description, config.directoryPhone, config.imageUrl])}
             config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} />
             : id === "servicos" ? <ServicesSettings config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} />
-              : <HoursSettings config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} />}
+              : <div className="space-y-4"><HoursSettings config={config} busy={busy} onSave={saveSettings} onError={(text) => status(text, true)} /><ScheduleControls {...businessProps} /></div>}
     </div>)}
   </section>;
 }

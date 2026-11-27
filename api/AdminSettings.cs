@@ -17,7 +17,7 @@ static class AdminSettings
                        to_char(b.break_start::interval,'HH24:MI'),to_char(b.break_end::interval,'HH24:MI'),b.workdays,
                        (SELECT COALESCE(jsonb_agg(jsonb_build_object(
                             'id',s.id,'name',s.nome,'description',s.description,'priceInCents',s."priceInCents",
-                            'minutes',s.minutes,'active',s.active) ORDER BY s.nome,s.id),'[]'::jsonb)
+                            'minutes',s.minutes,'active',s.active,'preparation',s.preparation) ORDER BY s.nome,s.id),'[]'::jsonb)
                         FROM "BarbershopService" s WHERE s."barbershopId"=b.id)::text,
                        (SELECT COALESCE(jsonb_agg(jsonb_build_object('day',d.day,'note',d.note) ORDER BY d.day),'[]'::jsonb)
                         FROM salon_blocked_day d WHERE d.salon_id=b.id
@@ -59,7 +59,7 @@ static class AdminSettings
         });
         admin.MapPost("/services", async (OwnerService input, HttpContext ctx) =>
         {
-            if (!ValidName(input.Name,100) || (input.Description?.Length ?? 0)>500 ||
+            if (!ValidName(input.Name,100) || (input.Description?.Length ?? 0)>500 || (input.Preparation?.Length ?? 0)>500 ||
                 input.PriceInCents is null or <0 or >10_000_000 || input.Minutes is null or <5 or >480 ||
                 input.Active is null || (input.Id?.Length ?? 0)>200) return Results.BadRequest();
             var create=string.IsNullOrEmpty(input.Id);
@@ -69,10 +69,10 @@ static class AdminSettings
             await using var tx=await conn.BeginTransactionAsync(ct);
             if (!await LockSalon(conn,tx,id,ct)) return Results.NotFound();
             await using var cmd = new NpgsqlCommand(create ? """
-                INSERT INTO "BarbershopService" (id,"barbershopId",nome,description,"imageUrl","priceInCents",minutes,active)
-                VALUES ($2,$1,$3,$4,'',$5,$6,$7)
+                INSERT INTO "BarbershopService" (id,"barbershopId",nome,description,"imageUrl","priceInCents",minutes,active,preparation)
+                VALUES ($2,$1,$3,$4,'',$5,$6,$7,$8)
                 """ : """
-                UPDATE "BarbershopService" SET nome=$3,description=$4,"priceInCents"=$5,minutes=$6,active=$7
+                UPDATE "BarbershopService" SET nome=$3,description=$4,"priceInCents"=$5,minutes=$6,active=$7,preparation=$8
                 WHERE "barbershopId"=$1 AND id=$2
                 """,conn,tx);
             cmd.Parameters.AddWithValue(id);
@@ -82,6 +82,7 @@ static class AdminSettings
             cmd.Parameters.AddWithValue(input.PriceInCents.Value);
             cmd.Parameters.AddWithValue(input.Minutes.Value);
             cmd.Parameters.AddWithValue(input.Active.Value);
+            cmd.Parameters.AddWithValue(input.Preparation?.Trim() ?? "");
             if (await cmd.ExecuteNonQueryAsync(ct)!=1) return Results.NotFound();
             await tx.CommitAsync(ct);
             return Results.NoContent();
@@ -106,7 +107,8 @@ static class AdminSettings
             if (!await LockSalon(conn,tx,id,ct)) return Results.NotFound();
             await using var guard=new NpgsqlCommand("""
                 SELECT EXISTS (SELECT 1 FROM booking WHERE salon_id=$1 AND canceled_at IS NULL
-                AND starts_at>timezone('America/Sao_Paulo',clock_timestamp())
+                AND ends_at>timezone('America/Sao_Paulo',clock_timestamp())
+                AND NOT EXISTS (SELECT FROM salon_day_hours h WHERE h.salon_id=$1 AND h.day=booking.starts_at::date)
                 AND (NOT (extract(isodow FROM starts_at)::smallint=ANY($6))
                     OR starts_at < starts_at::date+$2 OR ends_at > starts_at::date+$3
                     OR ($4::time IS NOT NULL AND starts_at < starts_at::date+$5 AND ends_at > starts_at::date+$4)))
@@ -167,9 +169,9 @@ static class AdminSettings
     static string SalonId(HttpContext ctx) => ctx.User.FindFirstValue("salon_id")!;
     static bool ValidName(string? value,int max) => !string.IsNullOrWhiteSpace(value) && value.Length<=max;
     static string? GetNullableText(NpgsqlDataReader r,int index) => r.IsDBNull(index)?null:r.GetString(index);
-    static bool TryTime(string? value,out TimeOnly time) =>
+    internal static bool TryTime(string? value,out TimeOnly time) =>
         TimeOnly.TryParseExact(value,"HH:mm",CultureInfo.InvariantCulture,DateTimeStyles.None,out time);
-    static NpgsqlParameter NullableParameter(NpgsqlTypes.NpgsqlDbType dbType,object? value) =>
+    internal static NpgsqlParameter NullableParameter(NpgsqlTypes.NpgsqlDbType dbType,object? value) =>
         new() { NpgsqlDbType=dbType, Value=value ?? DBNull.Value };
 
     public static string? NormalizePhone(string? phone)
@@ -185,7 +187,7 @@ static class AdminSettings
             url.IdnHost.Contains('.') && !url.IdnHost.EndsWith(".localhost",StringComparison.OrdinalIgnoreCase) &&
             string.IsNullOrEmpty(url.UserInfo) && url.IsDefaultPort);
 
-    static async Task<bool> LockSalon(NpgsqlConnection conn,NpgsqlTransaction tx,string id,CancellationToken ct)
+    internal static async Task<bool> LockSalon(NpgsqlConnection conn,NpgsqlTransaction tx,string id,CancellationToken ct)
     {
         await using var cmd=new NpgsqlCommand("""SELECT id FROM "BarberShop" WHERE id=$1 FOR UPDATE""",conn,tx);
         cmd.Parameters.AddWithValue(id);
@@ -202,6 +204,6 @@ static class AdminSettings
     }
 }
 record OwnerProfile(string? Name,string? Address,string? Description,string? DirectoryPhone,string? ImageUrl);
-record OwnerService(string? Id,string? Name,string? Description,int? PriceInCents,int? Minutes,bool? Active);
+record OwnerService(string? Id,string? Name,string? Description,int? PriceInCents,int? Minutes,bool? Active,string? Preparation);
 record OwnerHours(string? Opens,string? Closes,string? BreakStart,string? BreakEnd,short[]? Workdays);
 record OwnerBlock(DateOnly Day,string? Note);

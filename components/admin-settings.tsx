@@ -6,6 +6,7 @@ import { type FormEvent, useState } from "react";
 import { addCalendarDays, salonToday } from "@/lib/calendar";
 
 type AdminService = {
+  preparation: string;
   id: string;
   name: string;
   description: string;
@@ -30,6 +31,7 @@ export type AdminConfig = {
 };
 
 type SaveRoute = "/profile" | "/services" | "/hours" | "/blocks" | "/blocks/remove";
+export type SaveBusiness = (route: string, payload: unknown, success: string) => Promise<boolean>;
 export type SaveSettings = (route: SaveRoute, payload: unknown, success: string) => Promise<boolean>;
 
 type SettingsProps = {
@@ -166,6 +168,7 @@ function ServiceForm({ service, busy, onSave, onError, onClose }: {
       id: service?.id,
       name: value(data, "name"),
       description: value(data, "description"),
+      preparation: value(data, "preparation"),
       priceInCents,
       minutes,
       active: data.has("active"),
@@ -181,6 +184,7 @@ function ServiceForm({ service, busy, onSave, onError, onClose }: {
       <label className={field}>Descrição do serviço
         <textarea name="description" className={input} defaultValue={service?.description} maxLength={500} rows={3} />
       </label>
+      <label className={field}>Orientações de preparo (opcional)<textarea name="preparation" className={input} defaultValue={service?.preparation} maxLength={500} rows={3} /></label>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className={field}>Preço (R$)
           <input name="price" className={input} type="text" inputMode="decimal" placeholder="0,00" maxLength={9}
