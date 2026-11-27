@@ -9,6 +9,7 @@ Use Node.js 22 LTS, npm, SDK .NET 10 e um banco PostgreSQL. Na raiz, aplique o S
 ```sh
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/001-studiobook.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/002-client-directory.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/003-client-bookings.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/demo.sql
 export ConnectionStrings__StudioBook='Host=localhost;Database=studiobook;Username=studiobook;Password=SUA_SENHA'
 # No Bash, leia a senha administrativa sem gravá-la no histórico.
@@ -31,7 +32,7 @@ Para incluir outro estabelecimento, use os INSERTs do arquivo de demonstração 
 
 Cada salão tem uma agenda compartilhada e um administrador. Os horários iniciais vão de segunda a sábado, das 9h às 18h no fuso de São Paulo. O operador pode ajustar opens, closes e workdays no cadastro e minutes em cada serviço. A reserva considera a duração completa e os atendimentos existentes, em intervalos de início de 15 minutos, até 90 dias à frente. O cliente recebe a confirmação na própria página. O administrador consulta o dia e cancela reservas.
 
-Em produção, publique o Next com HTTPS, mantenha a API atrás do proxy e persista as chaves de Data Protection do ASP.NET Core para preservar sessões entre reinícios e réplicas. Aplique os dois arquivos de migração em ordem antes de iniciar a aplicação. A conexão PostgreSQL da API deve usar o proprietário das tabelas ou um papel de servidor com as permissões e políticas necessárias.
+Em produção, publique o Next com HTTPS, mantenha a API atrás do proxy e persista as chaves de Data Protection do ASP.NET Core para preservar sessões entre reinícios e réplicas. Aplique os três arquivos de migração em ordem antes de iniciar a aplicação. A conexão PostgreSQL da API deve usar o proprietário das tabelas ou um papel de servidor com as permissões e políticas necessárias.
 
 ## Verificar o isolamento
 
@@ -44,3 +45,23 @@ paletas. As capas WebP estão em `public/estabelecimentos`, associadas pelo slug
 em `lib/salon-brand.ts`. Os outros estabelecimentos continuam usando a imagem
 configurada no banco e o layout da própria categoria. Não há migração adicional
 para as capas.
+
+## Agendamentos do cliente
+
+O cliente entra em **Meus locais**, adiciona um local pelo telefone com DDD e
+pode favoritar ou remover apenas o cartão no próprio navegador. Depois de
+agendar, **Meus agendamentos** mostra suas reservas salvas nesse navegador e o
+próximo horário aparece na página inicial. Para usar outro aparelho, copie o
+link privado da reserva; ele permite consultar e administrar aquele agendamento.
+Não o compartilhe com desconhecidos. Reservas anteriores à migração 003 seguem
+disponíveis no painel administrativo, mas não ganham link retroativamente.
+
+A alteração pelo cliente fica disponível até duas horas antes do atendimento.
+Ao remarcar, uma única transação valida a disponibilidade e muda o horário.
+Um conflito não cancela a reserva original. Na exportação para o calendário
+(.ics), é possível incluir um lembrete local de uma hora; não há envio por
+e-mail ou WhatsApp. Após remarcar ou cancelar, revise o evento no calendário.
+
+Para validar esse fluxo localmente com os dados de demonstração, execute
+`TEST_ORIGIN=http://localhost:3000 node tests/customer-bookings.mjs` em um banco
+descartável. O teste cria, remarca e cancela agendamentos fictícios.

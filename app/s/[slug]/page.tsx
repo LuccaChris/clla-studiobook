@@ -24,7 +24,7 @@ export default async function SalonPage({ params }: { params: Promise<{ slug: st
       <Header />
       <main className="salon-profile" data-layout={salon.layout} data-brand={brand ? slug : undefined}>
         <div className="salon-profile-inner">
-          <Link className="salon-back" href="/">Voltar aos meus salões</Link>
+          <Link className="salon-back" href="/">Voltar aos meus locais</Link>
           <header className="salon-identity">
             {hasCover && (
               <div className="salon-cover">
@@ -47,7 +47,7 @@ export default async function SalonPage({ params }: { params: Promise<{ slug: st
               <p className="salon-address">{salon.address}</p>
             </div>
           </header>
-          <section className="salon-reservation" aria-label="Agendamento">
+          <section id="agendamento" className="salon-reservation" aria-label="Agendamento">
             <ReservationForm slug={slug} services={salon.services} />
           </section>
           <Link className="salon-admin-link" href={"/s/" + encodeURIComponent(slug) + "/admin"}>
