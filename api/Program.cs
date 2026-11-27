@@ -42,6 +42,9 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = 429;
+    o.AddPolicy("customer", (HttpContext ctx) => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "", _ => new FixedWindowRateLimiterOptions
+        { PermitLimit = 120, Window = TimeSpan.FromMinutes(1) }));
     o.AddPolicy("login", (HttpContext ctx) => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Request.RouteValues["slug"]?.ToString() ?? "", _ => new FixedWindowRateLimiterOptions
         { PermitLimit = 15, Window = TimeSpan.FromMinutes(1) }));
@@ -150,7 +153,7 @@ admin.MapGet("/bookings", async (string slug, DateOnly day) =>
     await using var cmd=db.CreateCommand("""
         SELECT k.id,k.customer,k.service_name,to_char(k.starts_at,'HH24:MI')
         FROM booking k JOIN "BarberShop" b ON b.id=k.salon_id
-        WHERE b.slug=$1 AND k.starts_at >= $2::date AND k.starts_at < $2::date+1 ORDER BY k.starts_at
+        WHERE b.slug=$1 AND k.canceled_at IS NULL AND k.starts_at >= $2::date AND k.starts_at < $2::date+1 ORDER BY k.starts_at
         """);
     cmd.Parameters.AddWithValue(slug);
     cmd.Parameters.AddWithValue(day);
@@ -161,12 +164,13 @@ admin.MapGet("/bookings", async (string slug, DateOnly day) =>
 });
 admin.MapPost("/bookings/{id:guid}/cancel",async(string slug,Guid id) =>
 {
-    await using var cmd=db.CreateCommand("""DELETE FROM booking USING "BarberShop" b WHERE booking.salon_id=b.id AND b.slug=$1 AND booking.id=$2""");
+    await using var cmd=db.CreateCommand("""UPDATE booking SET canceled_at=now() FROM "BarberShop" b WHERE booking.salon_id=b.id AND b.slug=$1 AND booking.id=$2 AND booking.canceled_at IS NULL""");
     cmd.Parameters.AddWithValue(slug);
     cmd.Parameters.AddWithValue(id);
     return await cmd.ExecuteNonQueryAsync()==1 ? Results.NoContent() : Results.NotFound();
 });
 Calendar.Map(salon, db);
+Calendar.MapCustomer(app, db);
 app.Run();
 
 record Login(string Email,string Password);

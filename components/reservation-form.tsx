@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import type { Service } from "@/data/barbershop";
 import { addCalendarDays, addCalendarMonths, postJson, salonToday } from "@/lib/calendar";
+import { bookingLink, saveCode, validBookingCode } from "@/lib/client-bookings";
 
 const monthLabel = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
 const dayLabel = new Intl.DateTimeFormat("pt-BR", { dateStyle: "full", timeZone: "UTC" });
@@ -44,6 +46,7 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
   const [waiting, setWaiting] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [message, setMessage] = useState("");
+  const [confirmation, setConfirmation] = useState<{ code: string; saved: boolean }>();
 
   const base = "/api/salons/" + encodeURIComponent(slug);
   const today = salonToday();
@@ -79,6 +82,10 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
       try {
         const response = await postJson(base + "/bookings", { serviceId, day, time, customer });
         if (response.ok) {
+          const data: { manageCode?: unknown } = await response.json().catch(() => ({}));
+          if (validBookingCode(data.manageCode))
+            setConfirmation({ code: data.manageCode, saved: saveCode(data.manageCode) });
+          else setConfirmation(undefined);
           setMessage("Agendamento confirmado para " + day.split("-").reverse().join("/") + " às " + time + ".");
           setCustomer("");
           setDay("");
@@ -168,6 +175,14 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
         </button>
       </fieldset>
       <p role="status" className="booking-message">{message}</p>
+      {confirmation && (
+        <div className="mt-3 space-y-2">
+          <Link className="font-semibold underline underline-offset-4" href={bookingLink(confirmation.code)}>
+            Ver detalhes do agendamento
+          </Link>
+          {!confirmation.saved && <p className="text-sm">Guarde o link privado. Este navegador não conseguiu salvar seu agendamento.</p>}
+        </div>
+      )}
     </form>
   );
 }
