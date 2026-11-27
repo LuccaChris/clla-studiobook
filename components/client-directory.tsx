@@ -8,7 +8,8 @@ import { type FormEvent, useEffect, useRef, useState, useSyncExternalStore } fro
 import { getSalonBrand } from "@/lib/salon-brand";
 import { type DirectorySalon, salonCategories } from "@/lib/salon-directory";
 
-type SavedSalon = DirectorySalon & { favorite?: boolean };
+type SavedSalon = DirectorySalon & { favorite?: boolean; imageUrl?: string };
+type SalonProfile = Pick<SavedSalon, "slug" | "name" | "address"> & { imageUrl: string };
 type RemovedSalon = { salon: SavedSalon; index: number };
 
 const storageKey = "studiobook.directory";
@@ -54,6 +55,63 @@ function parseDirectory(value: string): SavedSalon[] {
   } catch {
     return [];
   }
+}
+
+function isSalonProfile(value: unknown): value is SalonProfile {
+  return typeof value === "object" && value !== null &&
+    "slug" in value && typeof value.slug === "string" &&
+    "name" in value && typeof value.name === "string" &&
+    "address" in value && typeof value.address === "string" &&
+    "imageUrl" in value && typeof value.imageUrl === "string";
+}
+
+function canShowCover(url: unknown): url is string {
+  return typeof url === "string" && (url.startsWith("https://") || (url.startsWith("/") && !url.startsWith("//")));
+}
+
+function useRefreshProfiles(savedSlugs: string) {
+  useEffect(() => {
+    if (!savedSlugs) return;
+    const controller = new AbortController();
+    let pending = false;
+
+    async function refresh() {
+      if (pending || document.visibilityState !== "visible") return;
+      pending = true;
+      try {
+        const response = await fetch("/api/salons", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return;
+        const profiles: unknown = await response.json();
+        if (controller.signal.aborted || !Array.isArray(profiles)) return;
+        const bySlug = new Map(profiles.filter(isSalonProfile).map((profile) => [profile.slug, profile]));
+
+        // Read the current list so in-flight edits to favorites or removals are not overwritten.
+        const saved = parseDirectory(readDirectory());
+        const updated = saved.map((salon) => {
+          const profile = bySlug.get(salon.slug);
+          if (!profile || (
+            salon.name === profile.name && salon.address === profile.address &&
+            salon.imageUrl === profile.imageUrl
+          )) return salon;
+          return { ...salon, name: profile.name, address: profile.address, imageUrl: profile.imageUrl };
+        });
+        if (updated.some((salon, index) => salon !== saved[index])) writeDirectory(updated);
+      } catch {
+        // Keep the last saved profile if the API or browser storage is unavailable.
+      } finally {
+        pending = false;
+      }
+    }
+
+    void refresh();
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("pageshow", refresh);
+    return () => {
+      controller.abort();
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("pageshow", refresh);
+    };
+  }, [savedSlugs]);
 }
 
 function parsePhone(value: string) {
@@ -214,6 +272,7 @@ function AddSalon({ onClose }: { onClose: () => void }) {
 export default function ClientDirectory() {
   const directory = useSyncExternalStore(subscribe, readDirectory, () => emptyDirectory);
   const storedSalons = parseDirectory(directory);
+  useRefreshProfiles(storedSalons.length ? JSON.stringify(storedSalons.map((salon) => salon.slug)) : "");
   const salons = [
     ...storedSalons.filter((salon) => salon.favorite === true),
     ...storedSalons.filter((salon) => salon.favorite !== true),
@@ -306,14 +365,15 @@ export default function ClientDirectory() {
         <ul className="grid gap-4 sm:grid-cols-2" aria-label="Locais salvos">
           {salons.map((salon) => {
             const brand = getSalonBrand(salon.slug);
+            const cover = canShowCover(salon.imageUrl) ? salon.imageUrl : brand?.cover;
             const address = `/s/${encodeURIComponent(salon.slug)}`;
             return (
               <li key={salon.slug}>
                 <article className="directory-card flex h-full flex-col rounded-xl border bg-card">
-                  {brand && (
+                  {cover && (
                     <div className="directory-cover overflow-hidden rounded-t-xl">
-                      <Image src={brand.cover} alt="" fill sizes="(max-width: 639px) 100vw, 420px" unoptimized />
-                      <span className="directory-monogram" aria-hidden>{brand.monogram}</span>
+                      <Image src={cover} alt="" fill sizes="(max-width: 639px) 100vw, 420px" unoptimized />
+                      {brand && <span className="directory-monogram" aria-hidden>{brand.monogram}</span>}
                     </div>
                   )}
                   <div className="flex flex-1 flex-col gap-3 p-4">

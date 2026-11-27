@@ -87,6 +87,22 @@ static class Calendar
             await using var gate=new NpgsqlCommand("""SELECT id FROM "BarberShop" WHERE slug=$1 FOR UPDATE""",conn,tx);
             gate.Parameters.AddWithValue(slug);
             if(await gate.ExecuteScalarAsync() is not string salonId) return Results.NotFound();
+            // Compare with the quote the customer saw while the same salon lock also protects service edits.
+            await using (var quote = new NpgsqlCommand("""
+                SELECT "priceInCents",minutes FROM "BarbershopService"
+                WHERE "barbershopId"=$1 AND id=$2 AND active
+                FOR SHARE
+                """,conn,tx))
+            {
+                quote.Parameters.AddWithValue(salonId);
+                quote.Parameters.AddWithValue(input.ServiceId);
+                await using var current=await quote.ExecuteReaderAsync();
+                if (!await current.ReadAsync()) return Results.Conflict();
+                var priceInCents=current.GetInt32(0);
+                var minutes=current.GetInt32(1);
+                if (input.ExpectedPriceInCents!=priceInCents || input.ExpectedMinutes!=minutes)
+                    return Results.Conflict(new { code="service_changed", priceInCents, minutes });
+            }
             var secret = RandomNumberGenerator.GetBytes(32);
             var id = Guid.NewGuid();
             await using var insert=new NpgsqlCommand("""
@@ -240,7 +256,7 @@ static class Calendar
         cmd.Parameters.AddWithValue(day);
     }
 }
-record Reservation(string Customer,string ServiceId,DateOnly Day,string Time,string? Phone);
+record Reservation(string Customer,string ServiceId,DateOnly Day,string Time,string? Phone,int? ExpectedPriceInCents,int? ExpectedMinutes);
 
 record BookingCode(string? Code);
 record BookingDay(string? Code, DateOnly Day);

@@ -44,7 +44,10 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
   const [time, setTime] = useState("");
   const [customer, setCustomer] = useState("");
   const [phone, setPhone] = useState("");
-  const preparation = services.find((service) => service.id === serviceId)?.preparation;
+  const [quotes, setQuotes] = useState<Record<string, { priceInCents: number; minutes: number }>>({});
+  const listed = services.find((service) => service.id === serviceId);
+  const quote = listed ? quotes[serviceId] ?? listed : undefined;
+  const preparation = listed?.preparation;
   const [waiting, setWaiting] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [message, setMessage] = useState("");
@@ -77,12 +80,13 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
   return (
     <form className="studio-form reservation-form" onSubmit={async (event) => {
       event.preventDefault();
-      if (!availableDays.has(day) || !availableSlots.includes(time) || !customer.trim()) return;
+      if (!quote || !availableDays.has(day) || !availableSlots.includes(time) || !customer.trim()) return;
       setWaiting(true);
       setMessage("");
+      setConfirmation(undefined);
 
       try {
-        const response = await postJson(base + "/bookings", { serviceId, day, time, customer, phone });
+        const response = await postJson(base + "/bookings", { serviceId, day, time, customer, phone, expectedPriceInCents: quote.priceInCents, expectedMinutes: quote.minutes });
         if (response.ok) {
           const data: { manageCode?: unknown } = await response.json().catch(() => ({}));
           if (validBookingCode(data.manageCode))
@@ -92,10 +96,18 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
           setCustomer("");
           setPhone("");
           setDay("");
+        } else if (response.status === 409) {
+          const changed: { code?: unknown; priceInCents?: unknown; minutes?: unknown } = await response.json().catch(() => ({}));
+          const { priceInCents, minutes } = changed;
+          if (changed.code === "service_changed" && typeof priceInCents === "number" && typeof minutes === "number"
+            && Number.isSafeInteger(priceInCents) && Number.isSafeInteger(minutes) && priceInCents >= 0 && minutes > 0) {
+            setQuotes((previous) => ({ ...previous, [serviceId]: { priceInCents, minutes } }));
+            setMessage("O valor ou a duração mudou para " + currency.format(priceInCents / 100) + " · " + minutes + " min. Nada foi reservado. Escolha um horário e confirme novamente se concordar.");
+          } else {
+            setMessage("Horário indisponível. Escolha outro.");
+          }
         } else {
-          setMessage(response.status === 409
-            ? "Horário indisponível. Escolha outro."
-            : response.status === 400 ? "Confira o nome e o telefone, se informado." : "Não foi possível confirmar o agendamento.");
+          setMessage(response.status === 400 ? "Confira o nome e o telefone, se informado." : "Não foi possível confirmar o agendamento.");
         }
         setTime("");
         setRefresh((value) => value + 1);
@@ -114,12 +126,14 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
             setDay("");
             setTime("");
             setMessage("");
+            setConfirmation(undefined);
           }}>
-            {services.map((service) => (
-              <option key={service.id} value={service.id}>
-                {service.name} · {service.minutes} min · {currency.format(service.priceInCents / 100)}
-              </option>
-            ))}
+            {services.map((service) => {
+              const terms = quotes[service.id] ?? service;
+              return <option key={service.id} value={service.id}>
+                {service.name} · {terms.minutes} min · {currency.format(terms.priceInCents / 100)}
+              </option>;
+            })}
           </select>
         </label>
         {preparation && <p className="whitespace-pre-wrap break-words rounded-xl border p-3 text-sm">
@@ -147,6 +161,7 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
                     setDay(date);
                     setTime("");
                     setMessage("");
+                    setConfirmation(undefined);
                   }}
                 >
                   {index + 1}
@@ -160,8 +175,9 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
           {availability && !availability.values && "Não foi possível consultar a disponibilidade."}
           {availability?.values?.length === 0 && "Nenhum dia disponível neste mês."}
         </p>
+        {availability && !availability.values && <button type="button" onClick={() => setRefresh((value) => value + 1)}>Tentar novamente</button>}
         {day && (
-          <label>
+          <div className="space-y-2"><label>
             Horário
             <select required value={time} disabled={!availableSlots.length} onChange={(event) => setTime(event.target.value)}>
               <option value="">
@@ -169,8 +185,12 @@ export default function ReservationForm({ slug, services }: { slug: string; serv
               </option>
               {availableSlots.map((slot) => <option key={slot}>{slot}</option>)}
             </select>
-            {slots && !slots.values && <span role="status">Não foi possível consultar os horários.</span>}
           </label>
+            {slots && !slots.values && <div className="space-y-2">
+              <p role="status">Não foi possível consultar os horários.</p>
+              <button type="button" onClick={() => setRefresh((value) => value + 1)}>Recarregar horários</button>
+            </div>}
+          </div>
         )}
         <label>
           Seu nome
