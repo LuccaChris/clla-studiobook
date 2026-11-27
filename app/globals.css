@@ -326,3 +326,178 @@
     justify-self: end;
   }
 }
+
+/* Featured identities are scoped to the four supplied businesses. */
+.directory-cover {
+  position: relative;
+  aspect-ratio: 2.1;
+  background: #332820;
+}
+
+.directory-cover img { object-fit: cover; }
+
+.directory-monogram {
+  position: absolute;
+  inset: auto auto .65rem .65rem;
+  padding: .22rem .48rem;
+  border: 1px solid #ffffff70;
+  background: #201b17ed;
+  color: #fff8eb;
+  font-family: Georgia, serif;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.salon-profile[data-brand] {
+  --background: var(--profile-card);
+  --border: color-mix(in srgb, var(--profile-ink) 22%, var(--profile-card));
+  --brand-display: Georgia, "Times New Roman", serif;
+  --brand-radius: 1.35rem;
+  --brand-photo-position: 64% 50%;
+  padding-top: clamp(1.1rem, 3vw, 2.1rem);
+}
+
+[data-brand] .salon-profile-inner {
+  gap: clamp(.85rem, 2.4vw, 1.65rem);
+  max-width: 74rem;
+}
+
+[data-brand] .salon-identity {
+  display: grid;
+  min-width: 0;
+  isolation: isolate;
+  border-radius: var(--brand-radius);
+  background: var(--brand-panel);
+  color: var(--brand-panel-ink);
+}
+
+[data-brand] .salon-cover {
+  position: relative;
+  aspect-ratio: 1.7;
+  opacity: 1;
+  overflow: hidden;
+}
+
+[data-brand] .salon-cover img { object-position: var(--brand-photo-position); }
+
+[data-brand] .salon-identity-text {
+  align-content: center;
+  gap: .65rem;
+  padding: clamp(1.35rem, 3.5vw, 3.15rem);
+  overflow-wrap: anywhere;
+}
+
+[data-brand] .salon-identity h1 {
+  font-family: var(--brand-display);
+  font-weight: 600;
+  font-size: clamp(2.15rem, 5vw, 4rem);
+  line-height: 1.03;
+  letter-spacing: -.047em;
+}
+
+[data-brand] .salon-category {
+  font-size: .69rem;
+  letter-spacing: .18em;
+}
+
+[data-brand] .brand-monogram {
+  display: inline-grid;
+  place-items: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  margin-bottom: .2rem;
+  border: 1px solid currentColor;
+  border-radius: var(--brand-mark-radius, 50%);
+  font-family: var(--brand-display);
+  font-weight: 700;
+  font-size: .92rem;
+  letter-spacing: .05em;
+}
+
+[data-brand] .brand-tagline { font-family: var(--brand-display); font-size: 1.17rem; font-style: italic; }
+[data-brand] .salon-address { font-size: .83rem; }
+[data-brand] .salon-reservation { width: 100%; border-radius: var(--brand-radius); min-width: 0; }
+[data-brand] .booking-calendar { overflow: hidden; }
+[data-brand] .reservation-form button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+.salon-profile[data-brand="studio-amaral"] {
+  --profile-surface: #f7eee4;
+  --profile-ink: #352118;
+  --profile-card: #fffaf3;
+  --profile-accent: #82472d;
+  --brand-panel: #342119;
+  --brand-panel-ink: #fff0dc;
+  --brand-radius: 1.6rem;
+  --brand-mark-radius: .4rem;
+  --brand-photo-position: 64% 50%;
+}
+
+.salon-profile[data-brand="barbearia-lopes"] {
+  --profile-surface: #1d1a16;
+  --profile-ink: #fff1d8;
+  --profile-card: #302820;
+  --profile-accent: #905126;
+  --brand-panel: #211914;
+  --brand-panel-ink: #fff2dd;
+  --brand-radius: .25rem;
+  --brand-mark-radius: 0;
+}
+
+[data-brand="barbearia-lopes"] .salon-identity h1 {
+  text-transform: uppercase;
+  letter-spacing: -.025em;
+}
+
+.salon-profile[data-brand="clinica-estetica-lucca"] {
+  --profile-surface: #f4f1e8;
+  --profile-ink: #343e34;
+  --profile-card: #fffdf6;
+  --profile-accent: #4c6650;
+  --brand-panel: #e8e8db;
+  --brand-panel-ink: #303e33;
+  --brand-radius: 1.8rem;
+  --brand-photo-position: 62% 46%;
+}
+
+.salon-profile[data-brand="nutricao-marina-costa"] {
+  --profile-surface: #edf0e3;
+  --profile-ink: #293820;
+  --profile-card: #fbfcf4;
+  --profile-accent: #4b6033;
+  --brand-panel: #dde5cb;
+  --brand-panel-ink: #28371e;
+  --brand-radius: 1.25rem;
+  --brand-photo-position: 63% 52%;
+}
+
+@media (min-width: 48rem) {
+  [data-brand] .salon-profile-inner { grid-template-columns: minmax(0, 1fr) minmax(0, .86fr); align-items: start; }
+  [data-brand] .salon-back,
+  [data-brand] .salon-admin-link { grid-column: 1 / -1; }
+
+  [data-brand="studio-amaral"] .salon-identity { grid-column: 1; grid-row: 2; }
+  [data-brand="studio-amaral"] .salon-reservation { grid-column: 2; grid-row: 2; }
+
+  [data-brand="barbearia-lopes"] .salon-identity {
+    grid-column: 1 / -1;
+    grid-template-columns: .82fr 1.18fr;
+    min-height: 25rem;
+  }
+  [data-brand="barbearia-lopes"] .salon-cover { grid-column: 2; grid-row: 1; aspect-ratio: auto; min-height: 25rem; }
+  [data-brand="barbearia-lopes"] .salon-identity-text { grid-column: 1; grid-row: 1; }
+  [data-brand="barbearia-lopes"] .salon-reservation { grid-column: 1 / -1; width: min(100%, 46rem); justify-self: center; }
+
+  [data-brand="clinica-estetica-lucca"] .salon-identity { grid-column: 1 / -1; }
+  [data-brand="clinica-estetica-lucca"] .salon-cover { aspect-ratio: 3.1; }
+  [data-brand="clinica-estetica-lucca"] .salon-identity-text { max-width: 44rem; justify-self: center; }
+  [data-brand="clinica-estetica-lucca"] .salon-reservation { grid-column: 1 / -1; width: min(100%, 44rem); justify-self: center; }
+
+  [data-brand="nutricao-marina-costa"] .salon-profile-inner { grid-template-columns: minmax(0, .86fr) minmax(0, 1fr); }
+  [data-brand="nutricao-marina-costa"] .salon-identity {
+    grid-column: 2;
+    grid-row: 2;
+    border-radius: 5rem 1.25rem 1.25rem 1.25rem;
+    min-height: 0;
+  }
+  [data-brand="nutricao-marina-costa"] .salon-reservation { grid-column: 1; grid-row: 2; }
+}

@@ -36,3 +36,11 @@ Em produção, publique o Next com HTTPS, mantenha a API atrás do proxy e persi
 ## Verificar o isolamento
 
 Em um banco de teste, prepare dois salões com administradores distintos. Defina TEST_ORIGIN (por exemplo, http://localhost:3000), TEST_SALON_A e TEST_SALON_B com os slugs, e TEST_EMAIL_A, TEST_PASSWORD_A, TEST_EMAIL_B e TEST_PASSWORD_B com as credenciais de teste. Execute `node tests/salon-isolation.mjs`. O teste verifica login, leitura da agenda e bloqueio de cancelamento cruzado.
+
+## Identidades visuais
+
+Os quatro locais de demonstração usam as suas próprias capas, monogramas e
+paletas. As capas WebP estão em `public/estabelecimentos`, associadas pelo slug
+em `lib/salon-brand.ts`. Os outros estabelecimentos continuam usando a imagem
+configurada no banco e o layout da própria categoria. Não há migração adicional
+para as capas.

@@ -1,9 +1,11 @@
 "use client";
 
 import { Plus, Search, Store } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { type FormEvent, useState, useSyncExternalStore } from "react";
 
+import { getSalonBrand } from "@/lib/salon-brand";
 import { type DirectorySalon, salonCategories } from "@/lib/salon-directory";
 
 const storageKey = "studiobook.directory";
@@ -148,18 +150,29 @@ export default function ClientDirectory() {
         </div>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
-          {salons.map((salon) => (
-            <li key={salon.slug}>
-              <Link
-                href={"/s/" + encodeURIComponent(salon.slug)}
-                className="block h-full space-y-1 rounded-xl border p-4 hover:border-foreground"
-              >
-                <p className="text-sm text-muted-foreground">{salonCategories[salon.layout]}</p>
-                <h2 className="text-lg font-semibold">{salon.name}</h2>
-                <p>{salon.address}</p>
-              </Link>
-            </li>
-          ))}
+          {salons.map((salon) => {
+            const brand = getSalonBrand(salon.slug);
+            return (
+              <li key={salon.slug}>
+                <Link
+                  href={"/s/" + encodeURIComponent(salon.slug)}
+                  className="directory-card block h-full overflow-hidden rounded-xl border hover:border-foreground"
+                >
+                  {brand && (
+                    <div className="directory-cover">
+                      <Image src={brand.cover} alt="" fill sizes="(max-width: 639px) 100vw, 420px" unoptimized />
+                      <span className="directory-monogram" aria-hidden>{brand.monogram}</span>
+                    </div>
+                  )}
+                  <div className="space-y-1 p-4">
+                    <p className="text-sm text-muted-foreground">{salonCategories[salon.layout]}</p>
+                    <h2 className="text-lg font-semibold">{salon.name}</h2>
+                    <p>{salon.address}</p>
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
       {isAdding ? (
